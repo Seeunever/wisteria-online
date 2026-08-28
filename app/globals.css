@@ -1,11 +1,11 @@
 :root {
-  --ink: #f5ead7;
-  --muted: #bcae9d;
-  --night: #17120f;
-  --wine: #571f35;
-  --paper: #e8d7b9;
-  --gold: #c99b55;
-  --line: rgb(232 215 185 / 16%);
+  --ink: #f5eff8;
+  --muted: #bbafc3;
+  --night: #120d1b;
+  --wine: #351a47;
+  --paper: #f1e7d8;
+  --gold: #c9aa6b;
+  --line: rgb(185 162 211 / 18%);
 }
 
 * { box-sizing: border-box; }
@@ -14,15 +14,15 @@ body {
   margin: 0;
   color: var(--ink);
   background:
-    radial-gradient(circle at 12% 2%, rgb(104 35 60 / 34%), transparent 29rem),
-    radial-gradient(circle at 90% 24%, rgb(116 73 42 / 16%), transparent 32rem),
+    radial-gradient(circle at 12% 2%, rgb(121 85 163 / 24%), transparent 29rem),
+    radial-gradient(circle at 90% 24%, rgb(53 26 71 / 24%), transparent 32rem),
     var(--night);
   font-family: 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
 }
 a { color: inherit; text-decoration: none; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button, input, textarea { font: inherit; }
-button:focus-visible, a:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #d7b9f3; outline-offset: 3px; }
 .link-button { padding: 0; border: 0; background: none; cursor: pointer; }
 
 .site-header {

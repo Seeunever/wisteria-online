@@ -14,6 +14,7 @@ test('room versions freeze atomically and incomplete starts require an explicit 
       advanceRoom,
       claimRole,
       createRoom,
+      deleteRoom,
       getRoomForMember,
       joinRoom,
       listRooms,
@@ -72,6 +73,18 @@ test('room versions freeze atomically and incomplete starts require an explicit 
     assert.equal(
       listRooms('user-other').find((item) => item.code === selectedCode)?.isMember,
       1,
+    );
+
+    const deletedCode = createRoom('user-owner', 'ver_aaaaaaaa');
+    assert.notEqual(deletedCode, null);
+    assert.equal(joinRoom('user-other', deletedCode!), true);
+    assert.equal(deleteRoom(deletedCode!, 'user-other'), false);
+    assert.notEqual(getRoomForMember(deletedCode!, 'user-owner'), null);
+    assert.equal(deleteRoom(deletedCode!, 'user-owner'), true);
+    assert.equal(getRoomForMember(deletedCode!, 'user-owner'), null);
+    assert.equal(
+      (database.prepare('SELECT COUNT(*) AS count FROM memberships WHERE room_id NOT IN (SELECT id FROM rooms)').get() as { count: number }).count,
+      0,
     );
 
     const code = createRoom('user-owner');

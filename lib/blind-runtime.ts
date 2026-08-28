@@ -304,11 +304,25 @@ export function projectLobby(bundle: BlindBundle, context: AuthorizationContext)
   const title = readableText(bundle, bundle.script.titleContentId, context);
   const roles = Object.values(bundle.roles)
     .sort((left, right) => left.slot - right.slot)
-    .map((role) => ({
-      roleId: role.roleId,
-      slot: role.slot,
-      displayName: readableText(bundle, role.displayNameContentId, context),
-    }));
+    .map((role) => {
+      // A lobby introduction is exposed only when the existing bundle grants the
+      // unassigned room member access. Role-compartment text therefore stays denied.
+      const introduction = role.sections
+        .filter((section) => (
+          ['introduction', 'profile', 'lobby_profile'].includes(section.kind)
+          && evaluateCondition(section.unlockWhen, context)
+        ))
+        .sort((left, right) => left.order - right.order)
+        .flatMap((section) => section.contentIds)
+        .map((contentId) => readableContent(bundle, contentId, context))
+        .filter((content): content is ProjectedContent => content !== null);
+      return {
+        roleId: role.roleId,
+        slot: role.slot,
+        displayName: readableText(bundle, role.displayNameContentId, context),
+        introduction,
+      };
+    });
   return { versionId: bundle.script.versionId, title, roles };
 }
 

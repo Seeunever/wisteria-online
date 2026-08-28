@@ -58,6 +58,8 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
         ? '剧本版本没有锁定成功，请重新选择可用的冻结版本。'
         : error === 'advance'
           ? '当前阶段还不满足推进条件；少人测试时，缺席角色相关内容可能无法完成。'
+          : error === 'delete'
+            ? '房间没有删除成功。只有房主确认后才能删除。'
           : null;
   const isOwner = room.ownerUserId === user.id;
   const packs = isOwner && !room.versionId ? listFrozenPackVersions() : [];
@@ -125,6 +127,13 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
       packLoadFailed = true;
     }
   }
+  const roomProgress = room.status === 'lobby'
+    ? room.assignedRoleId
+      ? '角色已锁定，等待房主开场；个人剧本会在开场后解锁。'
+      : '先选择角色；房主开场后，每位玩家只会看到自己的剧本。'
+    : room.status === 'running'
+      ? '游戏已经开始，当前阶段的个人剧本已按角色解锁。'
+      : '本局已经结束，房间保留最终授权状态。';
 
   return (
     <main className="rooms-shell">
@@ -133,7 +142,7 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
         <span className="room-code">房间 {room.code}</span>
       </header>
       <section className="live-room-hero">
-        <div><p className="eyebrow">{room.status.toUpperCase()}</p><h1>{room.versionId ? (room.packLabel ?? '剧本版本已锁定') : '等待房主选择剧本'}</h1><p>{room.versionId ? '当前房间只会读取这个不可变版本。' : '样本拆解完成并冻结后，房主可以在这里装载。'}</p></div>
+        <div><p className="eyebrow">{room.status.toUpperCase()}</p><h1>{room.versionId ? (room.packLabel ?? '剧本版本已锁定') : '等待房主选择剧本'}</h1><p>{room.versionId ? roomProgress : '样本拆解完成并冻结后，房主可以在这里装载。'}</p></div>
         <div className="room-safety-card"><strong>权限版本 {room.authorizationVersion}</strong><p>每次角色、阶段或成员状态变化，旧的访问能力都会失效。</p></div>
       </section>
       {errorMessage ? <p className="room-alert" role="alert">{errorMessage}</p> : null}
@@ -172,32 +181,55 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
             {lobby.roles.map((role) => {
               const taken = assignedRoleIds.has(role.roleId);
               return (
-                <div key={role.roleId}>
+                <article className="role-choice-card" key={role.roleId}>
                   <span>{String(role.slot).padStart(2, '0')}</span>
-                  <strong>{role.displayName ?? `席位 ${role.slot}`}</strong>
-                  {taken ? <small>已锁定</small> : (
+                  <div className="role-choice-copy">
+                    <strong>{role.displayName ?? `席位 ${role.slot}`}</strong>
+                    {role.introduction.length ? role.introduction.map((content, index) => (
+                      <ProtectedContent
+                        key={`${role.roleId}-introduction-${index}`}
+                        code={room.code}
+                        content={content}
+                      />
+                    )) : (
+                      <p>这个冻结版本尚未录入可在选角前公开的角色简介。</p>
+                    )}
+                  </div>
+                  {taken ? <small>已被选择</small> : (
                     <form action={`/api/rooms/${room.code}/roles/claim`} method="post">
                       <input type="hidden" name="roleId" value={role.roleId} />
-                      <button type="submit">选择</button>
+                      <button type="submit">选择这个角色</button>
                     </form>
                   )}
-                </div>
+                </article>
               );
             })}
           </div>
         </section>
       ) : null}
       {assignedRole ? (
-        <section className="members-section">
+        <section className="members-section role-book-section">
           <p className="eyebrow">YOUR ROLE</p>
           <h2>{assignedRole.displayName ?? '你的角色已锁定'}</h2>
           {assignedRole.sections.length ? assignedRole.sections.map((section) => (
             <article key={section.sectionId} className="empty-state">
+              <strong className="role-section-label">个人剧本 · 已解锁部分</strong>
               {section.content.map((content, index) => (
                 <ProtectedContent key={`${section.sectionId}-${index}`} code={room.code} content={content} />
               ))}
             </article>
-          )) : <p className="empty-state">等待房主开局后，第一阶段内容才会解锁。</p>}
+          )) : room.status === 'lobby' ? (
+            <p className="empty-state">角色已经选好。等待房主点击“开始游戏”后，第一阶段个人剧本会出现在这里。</p>
+          ) : (
+            <p className="room-alert" role="alert">游戏已经开始，但当前角色没有取得可阅读内容。请先刷新；仍为空时不要推进阶段。</p>
+          )}
+        </section>
+      ) : null}
+      {room.status === 'running' && !room.assignedRoleId ? (
+        <section className="members-section" role="status">
+          <p className="eyebrow">NO ROLE</p>
+          <h2>本局开始时你没有锁定角色</h2>
+          <p className="empty-state">少人开场后不能再补选角色，所以当前账号不会获得任何个人剧本。</p>
         </section>
       ) : null}
       {room.status === 'running' && availableLocations.length ? (
@@ -323,6 +355,25 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
         </section>
       ) : null}
       <section className="members-section"><p className="eyebrow">PLAYERS</p><h2>已到场</h2><div className="member-list">{room.members.map((member, index) => <div key={member.membershipId}><span>{String(index + 1).padStart(2, '0')}</span><strong>{member.displayName}</strong><small>{member.isOwner ? '房主' : member.assignedRoleId ? '已选角色' : '未选角色'}</small></div>)}</div></section>
+      {isOwner ? (
+        <section className="members-section room-danger-zone">
+          <p className="eyebrow">ROOM MANAGEMENT</p>
+          <h2>房间管理</h2>
+          <details>
+            <summary>删除这个房间</summary>
+            <div>
+              <p>删除后，成员、选角、阶段和线索状态都会一并清除，无法恢复。</p>
+              <form action={`/api/rooms/${room.code}/delete`} method="post">
+                <label>
+                  <input type="checkbox" name="confirmDelete" value="yes" required />
+                  我确认删除这个房间及本局进度。
+                </label>
+                <button type="submit">确认删除房间</button>
+              </form>
+            </div>
+          </details>
+        </section>
+      ) : null}
     </main>
   );
 }

@@ -8,7 +8,7 @@ import styles from './rooms.module.css';
 export const dynamic = 'force-dynamic';
 
 type RoomsPageProps = {
-  searchParams: Promise<{ error?: string | string[] }>;
+  searchParams: Promise<{ error?: string | string[]; deleted?: string | string[] }>;
 };
 
 type RoomSummary = ReturnType<typeof listRooms>[number];
@@ -82,6 +82,7 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
   const currentCount = rooms.filter((room) => room.status !== 'completed').length;
   const joinedCount = rooms.filter((room) => Boolean(room.isMember)).length;
   const error = Array.isArray(params.error) ? params.error[0] : params.error;
+  const deleted = Array.isArray(params.deleted) ? params.deleted[0] : params.deleted;
   const errorMessage = error === 'join'
     ? '这个房间当前不能加入，可能已经开场或刚刚结束。'
     : error === 'create'
@@ -149,6 +150,7 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
         </section>
 
         <aside className={styles.actionRail} aria-label="房间操作">
+          {deleted === '1' ? <p className={styles.noticeBanner} role="status">房间已删除。</p> : null}
           {errorMessage ? <p className={styles.errorBanner} role="status">{errorMessage}</p> : null}
 
           <form className={styles.createCard} action="/api/rooms/create" method="post" id="create-room">

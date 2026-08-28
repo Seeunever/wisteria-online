@@ -246,7 +246,11 @@ footer p { color: #7e7066; font-size: .68rem; }
 .room-safety-card p { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.7; }
 .member-list { display: grid; gap: .6rem; margin-top: 1.5rem; }
 .member-list div { display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; align-items: center; min-height: 58px; padding: .65rem 1rem; border: 1px solid var(--line); border-radius: .65rem; }
+.member-list .role-choice-card { display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; align-items: start; gap: 0; min-height: 7rem; padding: 1rem; border: 1px solid var(--line); border-radius: .75rem; background: rgb(255 255 255 / 2%); }
 .member-list span { color: var(--gold); font: 700 .68rem/1 monospace; }
+.role-choice-copy { display: grid; gap: .55rem; padding-right: 1rem; }
+.role-choice-copy > p { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.7; }
+.role-choice-copy .protected-scan { max-width: 34rem; margin-top: .35rem; }
 .members-section form { display: flex; flex-wrap: wrap; gap: .8rem; align-items: end; margin-top: 1rem; }
 .member-list form { margin-top: 0; }
 .members-section label { display: grid; gap: .45rem; color: var(--muted); font-size: .8rem; }
@@ -259,6 +263,7 @@ footer p { color: #7e7066; font-size: .68rem; }
 .deal-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
 .deal-controls form { margin: 0; }
 .members-section article p { white-space: pre-wrap; line-height: 1.8; }
+.role-section-label { display: block; margin-bottom: .75rem; color: var(--gold); font-size: .74rem; letter-spacing: .08em; }
 .room-alert { margin: 1.5rem 0 0; padding: .9rem 1rem; border: 1px solid rgb(215 154 176 / 40%); border-radius: .7rem; color: #f0c7d5; background: rgb(116 47 72 / 18%); font-size: .8rem; line-height: 1.65; }
 .force-start-section > .empty-state { display: block; margin-top: 1rem; padding: 1rem 1.1rem; border: 1px solid rgb(201 170 107 / 28%); border-radius: .7rem; background: rgb(201 170 107 / 5%); line-height: 1.75; }
 .force-start-confirmation { margin-top: 1rem; border: 1px solid rgb(215 154 176 / 34%); border-radius: .75rem; background: rgb(116 47 72 / 12%); }
@@ -269,6 +274,14 @@ footer p { color: #7e7066; font-size: .68rem; }
 .force-start-confirmation form { display: grid; align-items: start; }
 .force-start-confirmation label { grid-template-columns: auto minmax(0, 1fr); align-items: start; color: #d8cbdc; line-height: 1.65; }
 .force-start-confirmation input[type='checkbox'] { width: 1rem; height: 1rem; margin-top: .15rem; accent-color: var(--gold); }
+.room-danger-zone details { margin-top: 1rem; border: 1px solid rgb(215 154 176 / 30%); border-radius: .75rem; background: rgb(116 47 72 / 8%); }
+.room-danger-zone summary { padding: 1rem; color: #efcad6; cursor: pointer; font-weight: 750; }
+.room-danger-zone details > div { padding: 0 1rem 1rem; border-top: 1px solid rgb(215 154 176 / 20%); }
+.room-danger-zone details p { color: var(--muted); font-size: .8rem; line-height: 1.7; }
+.room-danger-zone form { display: grid; justify-items: start; }
+.room-danger-zone label { grid-template-columns: auto minmax(0, 1fr); align-items: start; line-height: 1.65; }
+.room-danger-zone input[type='checkbox'] { width: 1rem; height: 1rem; margin-top: .15rem; accent-color: #d79ab0; }
+.room-danger-zone button { border-color: #d79ab0; color: #fff; background: #743348; }
 
 @media (max-width: 900px) {
   .site-header { grid-template-columns: 1fr auto; }
@@ -300,7 +313,9 @@ footer p { color: #7e7066; font-size: .68rem; }
   .board-grid { grid-template-columns: 1fr; }
   .auth-grid, .room-actions-grid, .room-list { grid-template-columns: 1fr; }
   .member-list div { grid-template-columns: 2.2rem minmax(0, 1fr); }
+  .member-list .role-choice-card { grid-template-columns: 2.2rem minmax(0, 1fr); }
   .member-list form, .member-list small { grid-column: 2; justify-self: start; }
+  .role-choice-card form, .role-choice-card small { margin-top: .8rem; }
   .board-card:not(.board-summary) { display: grid; grid-template-columns: 8rem 1fr; gap: .8rem; }
   .board-card:not(.board-summary) .card-meta { align-items: flex-start; flex-direction: column; justify-content: center; }
   .card-index { display: none; }

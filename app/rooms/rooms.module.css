@@ -228,6 +228,7 @@
 .createCard button:hover { border-color: var(--gold); background: rgb(201 170 107 / 10%); }
 
 .errorBanner { margin: 0; padding: 12px 14px; border: 1px solid rgb(215 154 176 / 34%); border-radius: 10px; color: #f0c7d5; background: rgb(116 47 72 / 20%); font-size: 11px; line-height: 1.55; }
+.noticeBanner { margin: 0; padding: 12px 14px; border: 1px solid rgb(170 201 155 / 34%); border-radius: 10px; color: #dcebd5; background: rgb(62 96 55 / 20%); font-size: 11px; line-height: 1.55; }
 .versionNote { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: center; padding: 16px 8px 0; border-top: 1px solid var(--line); }
 .versionNote > span { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid rgb(201 170 107 / 38%); border-radius: 50%; color: var(--gold); font: 700 11px/1 "Songti SC", STSong, serif; }
 .versionNote p,

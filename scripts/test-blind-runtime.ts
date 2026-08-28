@@ -15,6 +15,7 @@ import {
 } from '../lib/blind-runtime.ts';
 
 const PUBLIC_CANARY = 'PUBLIC_CANARY';
+const LOBBY_PROFILE_CANARY = 'LOBBY_PROFILE_CANARY';
 const ROLE_A_CANARY = 'ROLE_A_CANARY_NEVER_CROSS';
 const ROLE_B_CANARY = 'ROLE_B_CANARY_NEVER_CROSS';
 const HOST_CANARY = 'HOST_CANARY_NEVER_EXPORT';
@@ -65,6 +66,7 @@ const bundle: BlindBundle = {
   assets: {},
   contentBlocks: {
     cnt_aaaaaaaa: block('cnt_aaaaaaaa', PUBLIC_CANARY, 'L1', 'room_member', null),
+    cnt_ffffffff: block('cnt_ffffffff', LOBBY_PROFILE_CANARY, 'L1', 'room_member', null),
     cnt_bbbbbbbb: block(
       'cnt_bbbbbbbb', ROLE_A_CANARY, 'L2', 'role_assignee', 'role_aaaaaaaa',
       ['role:role_aaaaaaaa', 'stage:stage_aaaaaaaa'],
@@ -129,7 +131,11 @@ const bundle: BlindBundle = {
     role_aaaaaaaa: {
       roleId: 'role_aaaaaaaa', slot: 1, displayNameContentId: 'cnt_aaaaaaaa',
       sections: [{
-        sectionId: 'section_aaaaaaaa', kind: 'background', stageId: 'stage_aaaaaaaa', order: 1,
+        sectionId: 'section_cccccccc', kind: 'lobby_profile', stageId: 'stage_aaaaaaaa', order: 1,
+        contentIds: ['cnt_ffffffff', 'cnt_bbbbbbbb'],
+        unlockWhen: { op: 'always' },
+      }, {
+        sectionId: 'section_aaaaaaaa', kind: 'background', stageId: 'stage_aaaaaaaa', order: 2,
         contentIds: ['cnt_bbbbbbbb', 'cnt_dddddddd'],
         unlockWhen: { op: 'stage_reached', stageId: 'stage_aaaaaaaa' },
       }],
@@ -167,6 +173,7 @@ test('unjoined and unassigned viewers receive no role content', () => {
   assert.equal(projectLobby(bundle, context({ joined: false })), null);
   const lobby = projectLobby(bundle, context());
   assert.equal(lobby?.title, PUBLIC_CANARY);
+  assert.equal(JSON.stringify(lobby).includes(LOBBY_PROFILE_CANARY), true);
   assert.equal(JSON.stringify(lobby).includes(ROLE_A_CANARY), false);
   assert.equal(JSON.stringify(lobby).includes(ROLE_B_CANARY), false);
   assert.equal(JSON.stringify(lobby).includes(HOST_CANARY), false);

@@ -105,6 +105,29 @@ export function listRooms(userId: string) {
   }>;
 }
 
+export function deleteRoom(codeInput: string, ownerUserId: string) {
+  const code = codeInput.normalize('NFKC').trim().toUpperCase();
+  if (!/^[23456789A-HJ-NP-Z]{6}$/.test(code)) return false;
+
+  const database = getDatabase();
+  try {
+    database.exec('BEGIN IMMEDIATE');
+    const deleted = database.prepare(`
+      DELETE FROM rooms
+      WHERE code = ? AND owner_user_id = ?
+    `).run(code, ownerUserId);
+    if (deleted.changes !== 1) {
+      database.exec('ROLLBACK');
+      return false;
+    }
+    database.exec('COMMIT');
+    return true;
+  } catch {
+    try { database.exec('ROLLBACK'); } catch { /* transaction did not start */ }
+    return false;
+  }
+}
+
 export function getRoomForMember(codeInput: string, userId: string) {
   const code = codeInput.toUpperCase();
   const room = getDatabase().prepare(`

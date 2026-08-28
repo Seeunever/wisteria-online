@@ -15,7 +15,10 @@
   min-height: 100svh;
   overflow: clip;
   color: var(--home-light);
-  background: var(--home-night);
+  background:
+    linear-gradient(rgb(18 13 27 / 94%), rgb(18 13 27 / 94%)),
+    url('/images/home/aubergine-silk-texture.webp') 0 0 / 640px 640px repeat,
+    var(--home-night);
 }
 
 .home button,
@@ -181,16 +184,24 @@
     linear-gradient(145deg, #120d1b 0%, #171020 54%, #120d1b 100%);
 }
 
+.hero::before {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  background:
+    linear-gradient(90deg, rgb(18 13 27 / 18%) 0%, rgb(18 13 27 / 7%) 46%, rgb(18 13 27 / 24%) 100%),
+    url('/images/home/manor-winter-garden.webp') 54% center / cover no-repeat;
+  content: "";
+}
+
 .hero::after {
   position: absolute;
   inset: 0;
   z-index: -2;
-  opacity: .11;
-  background-image:
-    linear-gradient(rgb(245 239 248 / 3%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(245 239 248 / 2%) 1px, transparent 1px);
-  background-size: 48px 48px;
+  opacity: .22;
+  background: url('/images/home/aubergine-silk-texture.webp') 0 0 / 640px 640px repeat;
   content: "";
+  mix-blend-mode: soft-light;
   mask-image: linear-gradient(to bottom, black, transparent 74%);
 }
 
@@ -209,35 +220,16 @@
 
 .heroVine {
   position: absolute;
-  top: 0;
-  right: -18px;
+  top: -86px;
+  right: -54px;
   z-index: -1;
-  width: min(29vw, 360px);
+  width: min(32vw, 390px);
   min-width: 220px;
-  height: auto;
-  opacity: .52;
+  aspect-ratio: 2 / 3;
+  opacity: .62;
+  background: url('/images/home/wisteria-cascade.webp') center / contain no-repeat;
+  filter: saturate(.78) contrast(.94);
   pointer-events: none;
-}
-
-.heroVine > path {
-  fill: none;
-  stroke: var(--home-gold);
-  stroke-width: 2;
-}
-
-.heroVine .vineBranch {
-  stroke: var(--home-lilac);
-  stroke-width: 1.2;
-}
-
-.vineLeaves {
-  fill: var(--home-moss);
-  opacity: .44;
-}
-
-.vineFlowers {
-  fill: var(--home-action);
-  opacity: .68;
 }
 
 .heroInner {
@@ -296,6 +288,10 @@
   margin-top: .12em;
   color: var(--home-lilac);
   font-style: normal;
+}
+
+.mobileTitleBreak {
+  display: none;
 }
 
 .heroDescription {
@@ -947,9 +943,10 @@
   }
 
   .heroVine {
-    right: -62px;
-    width: 270px;
-    opacity: .36;
+    top: -72px;
+    right: -88px;
+    width: 290px;
+    opacity: .38;
   }
 
   .heroFlow,
@@ -1014,6 +1011,10 @@
     min-height: 0;
   }
 
+  .hero::before {
+    background-position: 62% center;
+  }
+
   .heroInner {
     padding: 52px 0 36px;
   }
@@ -1031,6 +1032,10 @@
   .heroCopy h1 {
     font-size: clamp(40px, 12.8vw, 54px);
     letter-spacing: -.045em;
+  }
+
+  .mobileTitleBreak {
+    display: initial;
   }
 
   .heroDescription {

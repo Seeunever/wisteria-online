@@ -22,28 +22,6 @@ type HomeProps = {
   searchParams: Promise<{ auth?: string | string[] }>;
 };
 
-function WisteriaVine() {
-  return (
-    <svg className={styles.heroVine} viewBox="0 0 360 520" aria-hidden="true">
-      <path d="M330 0C280 92 326 151 239 212c-76 54-35 130-142 211-40 30-63 63-79 97" />
-      <path className={styles.vineBranch} d="M271 142c-57-12-90 23-103 76M217 257c58-7 89 20 104 65M119 397c-39-18-70-2-88 24" />
-      <g className={styles.vineLeaves}>
-        <path d="M279 87c-53-6-79 26-76 67 47 4 75-20 76-67Z" />
-        <path d="M248 203c52-8 82 20 84 59-45 6-75-14-84-59Z" />
-        <path d="M151 340c-45-15-76 6-83 41 39 14 70-2 83-41Z" />
-      </g>
-      <g className={styles.vineFlowers}>
-        <circle cx="181" cy="190" r="17" />
-        <circle cx="158" cy="214" r="15" />
-        <circle cx="188" cy="225" r="14" />
-        <circle cx="145" cy="240" r="13" />
-        <circle cx="172" cy="250" r="12" />
-        <circle cx="151" cy="272" r="10" />
-      </g>
-    </svg>
-  );
-}
-
 export default async function Home({ searchParams }: HomeProps) {
   const [user, params] = await Promise.all([getCurrentUser(), searchParams]);
   const accountHref = user ? '/rooms' : '#account';
@@ -87,14 +65,17 @@ export default async function Home({ searchParams }: HomeProps) {
 
       <div id="main-content">
         <section className={styles.hero} id="top">
-          <WisteriaVine />
+          <div className={styles.heroVine} aria-hidden="true" />
           <div className={styles.heroGlow} aria-hidden="true" />
 
           <div className={styles.heroInner}>
             <div className={styles.heroGrid}>
               <div className={styles.heroCopy}>
                 <p className={styles.eyebrow}><span aria-hidden="true" /> 豪门惊情 · 多人在线剧本游戏</p>
-                <h1>让秘密留在暗格里，<em>直到你决定公开。</em></h1>
+                <h1>
+                  让秘密留在<br className={styles.mobileTitleBreak} />暗格里，
+                  <em>直到你决定<br className={styles.mobileTitleBreak} />公开。</em>
+                </h1>
                 <p className={styles.heroDescription}>
                   创建房间、选择角色、搜索地点。拿到的线索先只属于你，真正公开后才会进入全房间的大看板。
                 </p>
@@ -191,7 +172,7 @@ export default async function Home({ searchParams }: HomeProps) {
           <span className={styles.brandMark} aria-hidden="true">藤</span>
           <span className={styles.brandText}><strong>暗格</strong><small>让秘密留在该留的位置</small></span>
         </a>
-        <p>阶段 2 · 响应式首页与账户入口</p>
+        <p>阶段 3 · 紫藤深宅视觉资产</p>
       </footer>
     </main>
   );

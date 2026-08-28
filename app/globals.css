@@ -252,6 +252,8 @@ footer p { color: #7e7066; font-size: .68rem; }
 .members-section label { display: grid; gap: .45rem; color: var(--muted); font-size: .8rem; }
 .members-section select { min-height: 44px; padding: 0 .8rem; border: 1px solid var(--line); border-radius: .55rem; color: var(--ink); background: #16151a; }
 .members-section button { min-height: 40px; padding: 0 .9rem; border: 1px solid var(--gold); border-radius: .55rem; color: #171216; background: var(--gold); font-weight: 800; cursor: pointer; }
+.members-section > button { margin-top: 1rem; }
+.members-section button:disabled { border-color: var(--line); color: #83798a; background: #241d2b; cursor: not-allowed; }
 .members-section article.empty-state { margin-top: 1rem; padding: 1.2rem; border: 1px solid var(--line); border-radius: .7rem; color: var(--ink); background: rgb(255 255 255 / 2%); }
 .protected-scan { display: block; width: 100%; height: auto; margin-top: 1rem; border-radius: .9rem; }
 .deal-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }

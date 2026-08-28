@@ -82,6 +82,13 @@ try {
 
   const runRoot = realpathSync(path.resolve(args.runRoot));
   const dataDirectory = realpathSync(path.resolve(args.dataDirectory));
+  const dataMetadata = lstatSync(dataDirectory);
+  if (!dataMetadata.isDirectory() || dataMetadata.isSymbolicLink()) throw new Error('DATA_ROOT_REJECTED');
+  if (
+    typeof process.getuid === 'function'
+    && typeof process.getgid === 'function'
+    && (process.getuid() !== dataMetadata.uid || process.getgid() !== dataMetadata.gid)
+  ) throw new Error('DATA_OWNER_MISMATCH');
   if (runRoot === dataDirectory || runRoot.startsWith(`${dataDirectory}${path.sep}`)) {
     throw new Error('ROOT_OVERLAP');
   }

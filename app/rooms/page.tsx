@@ -33,12 +33,16 @@ function formatRoomDate(createdAt: number) {
 
 function RoomCard({ room }: { room: RoomSummary }) {
   const status = getRoomStatus(room.status);
+  const isMember = Boolean(room.isMember);
+  const canJoin = room.status === 'lobby';
 
-  return (
-    <Link className={styles.roomCard} href={`/rooms/${room.code}`} aria-label={`${status.action} ${room.code}`}>
+  const content = (
+    <>
       <div className={styles.roomCardTopline}>
         <span className={styles.roomCode}>{room.code}</span>
-        <span className={styles.roomRole}>{room.isOwner ? '房主' : '成员'}</span>
+        <span className={styles.roomRole}>
+          {room.isOwner ? '房主' : isMember ? '已加入' : canJoin ? '可加入' : '已开场'}
+        </span>
       </div>
       <div>
         <strong>{status.label}</strong>
@@ -47,10 +51,24 @@ function RoomCard({ room }: { room: RoomSummary }) {
       <footer>
         <span>{room.memberCount} 人</span>
         <time dateTime={new Date(room.createdAt).toISOString()}>{formatRoomDate(room.createdAt)} 创建</time>
-        <b>{status.action} <i aria-hidden="true">→</i></b>
+        <b>{isMember ? status.action : canJoin ? '加入房间' : '等待下一局'} <i aria-hidden="true">{canJoin || isMember ? '→' : ''}</i></b>
       </footer>
-    </Link>
+    </>
   );
+
+  if (isMember) {
+    return <Link className={styles.roomCard} href={`/rooms/${room.code}`} aria-label={`${status.action} ${room.code}`}>{content}</Link>;
+  }
+  if (canJoin) {
+    return (
+      <form className={styles.roomCard} action="/api/rooms/join" method="post">
+        <input type="hidden" name="code" value={room.code} />
+        <button className={styles.roomCardSubmit} type="submit" aria-label={`加入房间 ${room.code}`} />
+        {content}
+      </form>
+    );
+  }
+  return <article className={styles.roomCard}>{content}</article>;
 }
 
 export default async function RoomsPage({ searchParams }: RoomsPageProps) {
@@ -61,10 +79,11 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
   const packs = listFrozenPackVersions();
   const [recentRoom, ...olderRooms] = rooms;
   const runningCount = rooms.filter((room) => room.status === 'running').length;
-  const ownedCount = rooms.filter((room) => Boolean(room.isOwner)).length;
+  const currentCount = rooms.filter((room) => room.status !== 'completed').length;
+  const joinedCount = rooms.filter((room) => Boolean(room.isMember)).length;
   const error = Array.isArray(params.error) ? params.error[0] : params.error;
   const errorMessage = error === 'join'
-    ? '房间码无效或当前无法加入，请核对六位房间码后重试。'
+    ? '这个房间当前不能加入，可能已经开场或刚刚结束。'
     : error === 'create'
       ? '房间暂时没有创建成功，请稍后重试。'
       : null;
@@ -82,8 +101,8 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
 
           <nav className={styles.nav} aria-label="大厅导航">
             <Link href="/">首页</Link>
-            <a href="#my-rooms">我的房间</a>
-            <a href="#join-room">加入房间</a>
+            <a href="#current-rooms">当前房间</a>
+            <a href="#create-room">创建房间</a>
           </nav>
 
           <div className={styles.account}>
@@ -98,33 +117,33 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
       <section className={styles.hero} aria-labelledby="lobby-title">
         <div className={styles.heroVine} aria-hidden="true" />
         <div className={styles.heroCopy}>
-          <p className={styles.eyebrow}><span aria-hidden="true" /> PRIVATE LOBBY</p>
-          <h1 id="lobby-title">今晚的房间，<em>已经为你留好位置。</em></h1>
-          <p>继续上一局，凭六位房间码归队，或者开一个只属于这张桌子的新房间。</p>
+          <p className={styles.eyebrow}><span aria-hidden="true" /> FRIENDS LOBBY</p>
+          <h1 id="lobby-title">今晚开的房间，<em>都在这里。</em></h1>
+          <p>注册后可以直接查看当前房间，点一下加入；也可以自己选择剧本开一张新桌子。</p>
         </div>
         <dl className={styles.lobbyStats} aria-label="我的大厅摘要">
-          <div><dt>全部房间</dt><dd>{rooms.length}</dd></div>
+          <div><dt>当前房间</dt><dd>{currentCount}</dd></div>
           <div><dt>进行中</dt><dd>{runningCount}</dd></div>
-          <div><dt>我是房主</dt><dd>{ownedCount}</dd></div>
+          <div><dt>我已加入</dt><dd>{joinedCount}</dd></div>
         </dl>
       </section>
 
       <div className={styles.lobbyGrid} id="lobby-content">
-        <section className={styles.roomSection} id="my-rooms" aria-labelledby="my-rooms-title">
+        <section className={styles.roomSection} id="current-rooms" aria-labelledby="current-rooms-title">
           <div className={styles.sectionHeading}>
-            <div><p className={styles.sectionKicker}>MY ROOMS</p><h2 id="my-rooms-title">我的房间</h2></div>
+            <div><p className={styles.sectionKicker}>OPEN ROOMS</p><h2 id="current-rooms-title">当前房间</h2></div>
             {rooms.length ? <span>按创建时间倒序</span> : null}
           </div>
 
           {recentRoom ? (
             <>
-              <div className={styles.recentLabel}><span>继续最近房间</span><i aria-hidden="true" /></div>
+              <div className={styles.recentLabel}><span>已加入的房间会优先显示</span><i aria-hidden="true" /></div>
               <RoomCard room={recentRoom} />
             </>
           ) : (
             <div className={styles.emptyState}>
               <span aria-hidden="true">◇</span>
-              <div><h3>这里还没有房间</h3><p>凭朋友给你的六位房间码加入，或者创建一张新桌子。</p></div>
+              <div><h3>现在还没有房间</h3><p>创建一张新桌子后，朋友登录就能直接看到并加入。</p></div>
             </div>
           )}
         </section>
@@ -132,31 +151,9 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
         <aside className={styles.actionRail} aria-label="房间操作">
           {errorMessage ? <p className={styles.errorBanner} role="status">{errorMessage}</p> : null}
 
-          <form className={styles.joinCard} action="/api/rooms/join" method="post" id="join-room">
+          <form className={styles.createCard} action="/api/rooms/create" method="post" id="create-room">
             <div className={styles.cardHeading}>
               <span className={styles.actionNumber}>01</span>
-              <div><p>朋友已经开房</p><h2>输入房间码</h2></div>
-            </div>
-            <label htmlFor="room-code">六位房间码</label>
-            <input
-              id="room-code"
-              name="code"
-              minLength={6}
-              maxLength={6}
-              autoComplete="off"
-              autoCapitalize="characters"
-              spellCheck={false}
-              aria-describedby="room-code-hint"
-              placeholder="例如 WG2K7M"
-              required
-            />
-            <p className={styles.fieldHint} id="room-code-hint">不区分大小写，不使用容易混淆的 0、1、I、O。</p>
-            <button type="submit">加入房间 <span aria-hidden="true">→</span></button>
-          </form>
-
-          <form className={styles.createCard} action="/api/rooms/create" method="post">
-            <div className={styles.cardHeading}>
-              <span className={styles.actionNumber}>02</span>
               <div><p>我是发起人</p><h2>创建新房间</h2></div>
             </div>
             {packs.length ? (
@@ -192,7 +189,7 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
 
         {olderRooms.length ? (
           <section className={styles.olderRooms} aria-labelledby="other-rooms-title">
-            <h3 id="other-rooms-title">其他房间</h3>
+            <h3 id="other-rooms-title">更多房间</h3>
             <div className={styles.roomList}>
               {olderRooms.map((room) => <RoomCard room={room} key={room.code} />)}
             </div>
@@ -205,7 +202,7 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
           <span className={styles.brandMark} aria-hidden="true">藤</span>
           <span className={styles.brandText}><strong>暗格</strong><small>让秘密留在该留的位置</small></span>
         </Link>
-        <p>房间大厅 · 仅显示你已加入的房间</p>
+        <p>房间大厅 · 登录后可查看全部当前房间</p>
       </footer>
     </main>
   );

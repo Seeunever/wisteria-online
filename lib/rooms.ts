@@ -84,20 +84,23 @@ export function listRooms(userId: string) {
     SELECT rooms.code, rooms.status, rooms.created_at AS createdAt,
            pack_versions.public_label AS packLabel,
            rooms.owner_user_id = ? AS isOwner,
+           mine.id IS NOT NULL AS isMember,
            COUNT(active.id) AS memberCount
-    FROM memberships mine
-    JOIN rooms ON rooms.id = mine.room_id
+    FROM rooms
+    LEFT JOIN memberships mine
+      ON mine.room_id = rooms.id AND mine.user_id = ? AND mine.left_at IS NULL
     LEFT JOIN pack_versions ON pack_versions.id = rooms.version_id
     LEFT JOIN memberships active ON active.room_id = rooms.id AND active.left_at IS NULL
-    WHERE mine.user_id = ? AND mine.left_at IS NULL
+    WHERE rooms.status != 'completed' OR mine.id IS NOT NULL
     GROUP BY rooms.id
-    ORDER BY rooms.created_at DESC
+    ORDER BY (mine.id IS NOT NULL) DESC, rooms.created_at DESC
   `).all(userId, userId) as Array<{
     code: string;
     status: string;
     createdAt: number;
     packLabel: string | null;
     isOwner: number;
+    isMember: number;
     memberCount: number;
   }>;
 }
@@ -137,6 +140,7 @@ export function getRoomForMember(codeInput: string, userId: string) {
   const members = getDatabase().prepare(`
     SELECT memberships.id AS membershipId, users.display_name AS displayName,
            memberships.joined_at AS joinedAt,
+           memberships.user_id = ? AS isOwner,
            role_assignments.role_id AS assignedRoleId
     FROM memberships
     JOIN users ON users.id = memberships.user_id
@@ -145,10 +149,11 @@ export function getRoomForMember(codeInput: string, userId: string) {
       AND role_assignments.membership_id = memberships.id
     WHERE memberships.room_id = ? AND memberships.left_at IS NULL
     ORDER BY memberships.joined_at
-  `).all(room.id) as Array<{
+  `).all(room.ownerUserId, room.id) as Array<{
     membershipId: string;
     displayName: string;
     joinedAt: number;
+    isOwner: number;
     assignedRoleId: string | null;
   }>;
   const reachedStages = getDatabase().prepare(`

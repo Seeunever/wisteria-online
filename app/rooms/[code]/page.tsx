@@ -83,6 +83,7 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
   let availableLocations: ReturnType<typeof projectAvailableLocations> = [];
   let visibleClues: ReturnType<typeof projectVisibleClues> = [];
   let packRoleCount = 0;
+  let packLoadFailed = false;
   let canAdvance = false;
   if (room.versionId) {
     try {
@@ -121,6 +122,7 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
       }
     } catch {
       // Protected storage failures use the same empty projection as unavailable objects.
+      packLoadFailed = true;
     }
   }
 
@@ -135,6 +137,13 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
         <div className="room-safety-card"><strong>权限版本 {room.authorizationVersion}</strong><p>每次角色、阶段或成员状态变化，旧的访问能力都会失效。</p></div>
       </section>
       {errorMessage ? <p className="room-alert" role="alert">{errorMessage}</p> : null}
+      {room.versionId && packLoadFailed ? (
+        <section className="members-section room-load-failure" role="alert">
+          <p className="eyebrow">PACK UNAVAILABLE</p>
+          <h2>剧本暂时无法读取</h2>
+          <p className="empty-state">服务器没有成功读取这个冻结版本，选角色和开场已经暂停，请稍后刷新。</p>
+        </section>
+      ) : null}
       {isOwner && !room.versionId ? (
         <section className="members-section">
           <p className="eyebrow">IMMUTABLE PACK</p>
@@ -251,7 +260,7 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
           <p className="eyebrow">START</p>
           <h2>所有席位都已锁定</h2>
           <form action={`/api/rooms/${room.code}/start`} method="post">
-            <button type="submit">开始第一阶段</button>
+            <button type="submit">开始游戏</button>
           </form>
         </section>
       ) : null}
@@ -287,6 +296,14 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
           <p className="eyebrow">START</p>
           <h2>至少先锁定一个席位</h2>
           <p className="empty-state">你可以自己先选择一个角色，再使用少人开场进行测试。</p>
+          <button type="button" disabled>选择角色后开始游戏</button>
+        </section>
+      ) : null}
+      {!isOwner && room.versionId && room.status === 'lobby' && packRoleCount > 0 ? (
+        <section className="members-section">
+          <p className="eyebrow">WAITING FOR HOST</p>
+          <h2>等待房主开始游戏</h2>
+          <p className="empty-state">你可以先选择自己的角色；开场按钮只显示在房主页面。</p>
         </section>
       ) : null}
       {isOwner && canAdvance ? (
@@ -305,7 +322,7 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
           <p className="empty-state">房间保留在这个不可变剧本版本与最终授权状态上。</p>
         </section>
       ) : null}
-      <section className="members-section"><p className="eyebrow">PLAYERS</p><h2>已到场</h2><div className="member-list">{room.members.map((member, index) => <div key={`${member.displayName}-${member.joinedAt}`}><span>{String(index + 1).padStart(2, '0')}</span><strong>{member.displayName}</strong></div>)}</div></section>
+      <section className="members-section"><p className="eyebrow">PLAYERS</p><h2>已到场</h2><div className="member-list">{room.members.map((member, index) => <div key={member.membershipId}><span>{String(index + 1).padStart(2, '0')}</span><strong>{member.displayName}</strong><small>{member.isOwner ? '房主' : member.assignedRoleId ? '已选角色' : '未选角色'}</small></div>)}</div></section>
     </main>
   );
 }

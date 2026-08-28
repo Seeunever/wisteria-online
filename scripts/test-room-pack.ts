@@ -16,6 +16,7 @@ test('room versions freeze atomically and incomplete starts require an explicit 
       createRoom,
       getRoomForMember,
       joinRoom,
+      listRooms,
       publishHeldClue,
       searchLocation,
       startRoom,
@@ -64,6 +65,14 @@ test('room versions freeze atomically and incomplete starts require an explicit 
       'SELECT version_id AS versionId FROM rooms WHERE code = ?',
     ).get(selectedCode) as { versionId: string };
     assert.equal(selectedRoom.versionId, 'ver_aaaaaaaa');
+    const discoveredRoom = listRooms('user-other').find((item) => item.code === selectedCode);
+    assert.equal(discoveredRoom?.isMember, 0);
+    assert.equal(discoveredRoom?.packLabel, 'Synthetic pack');
+    assert.equal(joinRoom('user-other', selectedCode!), true);
+    assert.equal(
+      listRooms('user-other').find((item) => item.code === selectedCode)?.isMember,
+      1,
+    );
 
     const code = createRoom('user-owner');
     assert.notEqual(code, null);

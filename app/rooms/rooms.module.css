@@ -179,6 +179,8 @@
 .roomCard footer { display: grid; grid-template-columns: auto auto 1fr; gap: 16px; align-items: center; width: auto; margin: 0; padding: 16px 0 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
 .roomCard footer b { justify-self: end; color: var(--light); font-size: 11px; }
 .roomCard footer i { margin-left: 8px; color: var(--gold); font-style: normal; }
+.roomCardSubmit { position: absolute; inset: 0; z-index: 1; width: 100%; border: 0; border-radius: inherit; background: transparent; cursor: pointer; }
+.roomCardSubmit:focus-visible { outline: 3px solid #d7b9f3; outline-offset: 3px; }
 
 .olderRooms { grid-area: history; min-width: 0; }
 .olderRooms h3 { margin: 0 0 14px; font-size: 12px; }

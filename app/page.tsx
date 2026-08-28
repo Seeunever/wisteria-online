@@ -1,8 +1,5 @@
-import {
-  chatGPTSignInPath,
-  chatGPTSignOutPath,
-  getChatGPTUser,
-} from './chatgpt-auth';
+import { getCurrentUser } from '@/lib/auth';
+import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,8 +17,8 @@ const flow = [
 ];
 
 export default async function Home() {
-  const user = await getChatGPTUser();
-  const accountHref = user ? '/rooms' : chatGPTSignInPath('/');
+  const user = await getCurrentUser();
+  const accountHref = user ? '/rooms' : '#account';
 
   return (
     <main>
@@ -42,11 +39,13 @@ export default async function Home() {
           {user ? (
             <>
               <span className="user-chip">{user.displayName}</span>
-              <a className="quiet-link" href={chatGPTSignOutPath('/')}>退出</a>
+              <form action="/api/auth/logout" method="post">
+                <button className="quiet-link link-button" type="submit">退出</button>
+              </form>
             </>
           ) : null}
           <a className="header-cta" href={accountHref}>
-            {user ? '进入我的房间' : '登录 / 创建账号'}
+            {user ? '进入我的房间' : '登录 / 注册'}
           </a>
         </div>
       </header>
@@ -60,7 +59,7 @@ export default async function Home() {
           </p>
           <div className="hero-actions">
             <a className="primary-button" href={accountHref}>
-              {user ? '继续我的游戏' : '创建玩家账号'}
+              {user ? '继续我的游戏' : '登录或创建账号'}
               <span aria-hidden="true">→</span>
             </a>
             <a className="secondary-button" href="#board">浏览公开看板</a>
@@ -96,6 +95,33 @@ export default async function Home() {
           </article>
           <p className="privacy-line"><span aria-hidden="true">●</span> 私藏内容不会进入房间广播或公开记录</p>
         </div>
+      </section>
+
+      <section className="account-section" id="account">
+        <div className="account-copy">
+          <p className="eyebrow">PRIVATE SESSION</p>
+          <h2>{user ? `欢迎回来，${user.displayName}` : '先认领一个只属于你的玩家身份。'}</h2>
+          <p>
+            账号只用于房间和角色权限。密码会经过本地强哈希保存；未加入房间的人无法探测其中的角色、阶段或线索。
+          </p>
+          {user ? <Link className="primary-button account-link" href="/rooms">进入房间大厅 →</Link> : null}
+        </div>
+        {!user ? (
+          <div className="auth-grid">
+            <form className="auth-card" action="/api/auth/login" method="post">
+              <span>已有账号</span>
+              <label>玩家名<input name="displayName" minLength={2} maxLength={24} autoComplete="username" required /></label>
+              <label>密码<input name="password" type="password" minLength={8} maxLength={128} autoComplete="current-password" required /></label>
+              <button type="submit">登录</button>
+            </form>
+            <form className="auth-card" action="/api/auth/register" method="post">
+              <span>第一次来</span>
+              <label>玩家名<input name="displayName" minLength={2} maxLength={24} autoComplete="username" required /></label>
+              <label>密码<input name="password" type="password" minLength={8} maxLength={128} autoComplete="new-password" required /></label>
+              <button type="submit">注册并进入</button>
+            </form>
+          </div>
+        ) : null}
       </section>
 
       <section className="board-section" id="board">

@@ -36,3 +36,9 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# private source packs (large and spoiler-sensitive)
+/murderScripts/
+
+# local mutable application state
+/.data/

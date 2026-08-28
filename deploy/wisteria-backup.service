@@ -1,0 +1,16 @@
+[Unit]
+Description=Back up Wisteria SQLite database
+After=wisteria.service
+
+[Service]
+Type=oneshot
+User=wisteria
+Group=wisteria
+Environment=WISTERIA_DATA_DIR=/var/lib/wisteria
+Environment=WISTERIA_BACKUP_DIR=/var/backups/wisteria
+ExecStart=/usr/bin/node /opt/wisteria/current/scripts/backup-db.mjs
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/wisteria

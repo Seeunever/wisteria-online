@@ -36,6 +36,13 @@ function initialize(database: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS sessions_expires_at ON sessions(expires_at);
 
+    CREATE TABLE IF NOT EXISTS device_credentials (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL,
+      last_used_at INTEGER NOT NULL
+    ) STRICT;
+
     CREATE TABLE IF NOT EXISTS pack_versions (
       id TEXT PRIMARY KEY,
       public_label TEXT NOT NULL,

@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: '暗格 · 在线剧本杀',
-  description: '支持账号登录、剧本与角色选择、私密搜证和公开线索大看板的多人在线剧本杀平台。',
+  description: '支持用户名身份、剧本与角色选择、私密搜证和公开线索大看板的多人在线剧本杀平台。',
 };
 
 export const viewport: Viewport = {

@@ -9,9 +9,10 @@ export function normalizeUsername(value: string) {
 
 export function validDisplayName(value: string) {
   const normalized = value.normalize('NFKC').trim();
-  return normalized.length >= 2
-    && normalized.length <= 24
-    && /^[\p{L}\p{N}_-]+$/u.test(normalized);
+  const length = Array.from(normalized).length;
+  return length >= 1
+    && length <= 24
+    && /^[\p{L}\p{N}_ -]+$/u.test(normalized);
 }
 
 export function validPassword(value: string) {

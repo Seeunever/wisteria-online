@@ -1,17 +1,12 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { cookies } from 'next/headers';
 import type { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from './db';
-import {
-  hashPassword,
-  normalizeUsername,
-  validDisplayName,
-  validPassword,
-  verifyPassword,
-} from './security';
 
 export const SESSION_COOKIE = 'wisteria_session';
+export const DEVICE_COOKIE = 'wisteria_device';
 const SESSION_SECONDS = 60 * 60 * 24 * 30;
+const DEVICE_SECONDS = 60 * 60 * 24 * 365;
 
 export type SessionUser = { id: string; displayName: string };
 
@@ -31,34 +26,6 @@ function lookupSession(token: string | undefined): SessionUser | null {
   return row ?? null;
 }
 
-export async function registerUser(displayNameInput: string, password: string) {
-  const displayName = displayNameInput.normalize('NFKC').trim();
-  if (!validDisplayName(displayName) || !validPassword(password)) return null;
-  const id = randomUUID();
-  const { salt, hash } = await hashPassword(password);
-  try {
-    getDatabase().prepare(`
-      INSERT INTO users (id, username_key, display_name, password_salt, password_hash, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, normalizeUsername(displayName), displayName, salt, hash, Date.now());
-    return { id, displayName } satisfies SessionUser;
-  } catch {
-    return null;
-  }
-}
-
-export async function authenticateUser(displayName: string, password: string) {
-  if (!validDisplayName(displayName) || !validPassword(password)) return null;
-  const row = getDatabase().prepare(`
-    SELECT id, display_name AS displayName, password_salt AS salt, password_hash AS hash
-    FROM users WHERE username_key = ?
-  `).get(normalizeUsername(displayName)) as
-    | (SessionUser & { salt: string; hash: string })
-    | undefined;
-  if (!row || !(await verifyPassword(password, row.salt, row.hash))) return null;
-  return { id: row.id, displayName: row.displayName } satisfies SessionUser;
-}
-
 export function createSession(userId: string) {
   const token = randomBytes(32).toString('base64url');
   const now = Date.now();
@@ -76,6 +43,16 @@ export function applySessionCookie(response: NextResponse, token: string) {
     secure: process.env.NODE_ENV === 'production',
     path: '/',
     maxAge: SESSION_SECONDS,
+  });
+}
+
+export function applyDeviceCookie(response: NextResponse, token: string) {
+  response.cookies.set(DEVICE_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: DEVICE_SECONDS,
   });
 }
 

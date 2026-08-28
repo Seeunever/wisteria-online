@@ -12,7 +12,7 @@ const publicClues = [
 ];
 
 const flow = [
-  ['01', '创建账号，进入自己的玩家身份'],
+  ['01', '输入用户名，进入自己的玩家身份'],
   ['02', '加入房间，选择唯一角色'],
   ['03', '搜索当前阶段开放的地点'],
   ['04', '保留私藏，或主动公开到大看板'],
@@ -25,7 +25,7 @@ type HomeProps = {
 export default async function Home({ searchParams }: HomeProps) {
   const [user, params] = await Promise.all([getCurrentUser(), searchParams]);
   const accountHref = user ? '/rooms' : '#account';
-  const authFailed = params.auth === 'failed';
+  const authError = Array.isArray(params.auth) ? params.auth[0] : params.auth;
 
   return (
     <main className={styles.home}>
@@ -57,7 +57,7 @@ export default async function Home({ searchParams }: HomeProps) {
               </>
             ) : null}
             <a className={styles.headerCta} href={accountHref}>
-              {user ? '我的房间' : '登录 / 注册'}
+              {user ? '我的房间' : '玩家入口'}
             </a>
           </div>
         </div>
@@ -117,7 +117,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   </dl>
                 </section>
               ) : (
-                <AuthPanel authFailed={authFailed} />
+                <AuthPanel error={authError} />
               )}
             </div>
 

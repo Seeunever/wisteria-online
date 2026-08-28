@@ -531,8 +531,19 @@
 
 .authField input:hover,
 .authField input:focus {
+  outline: none;
   border-color: rgb(185 162 211 / 58%);
   background: rgb(8 5 12 / 38%);
+  box-shadow: 0 0 0 3px rgb(185 162 211 / 12%);
+}
+
+.authField input[aria-invalid="true"] {
+  border-color: rgb(215 154 176 / 68%);
+}
+
+.authSubmit:disabled {
+  cursor: wait;
+  opacity: 0.72;
 }
 
 .authSubmit {

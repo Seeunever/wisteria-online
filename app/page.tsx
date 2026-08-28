@@ -1,6 +1,7 @@
 import { getCurrentUser } from '@/lib/auth';
 import Link from 'next/link';
 import { AuthPanel } from './auth-panel';
+import { StartGameLink } from './start-game-link';
 import styles from './home.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -80,10 +81,11 @@ export default async function Home({ searchParams }: HomeProps) {
                   创建房间、选择角色、搜索地点。拿到的线索先只属于你，真正公开后才会进入全房间的大看板。
                 </p>
                 <div className={styles.heroActions}>
-                  <a className={styles.primaryButton} href={accountHref}>
-                    {user ? '继续我的游戏' : '开始游戏'}
-                    <span aria-hidden="true">→</span>
-                  </a>
+                  {user ? (
+                    <Link className={styles.primaryButton} href={accountHref}>
+                      继续我的游戏 <span aria-hidden="true">→</span>
+                    </Link>
+                  ) : <StartGameLink className={styles.primaryButton} />}
                   <a className={styles.secondaryButton} href="#how">了解玩法</a>
                 </div>
                 <div className={styles.versionNote}>

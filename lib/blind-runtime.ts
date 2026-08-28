@@ -357,11 +357,26 @@ export function projectAvailableLocations(bundle: BlindBundle, context: Authoriz
   if (!context.joined || !context.assignedRoleId) return [];
   return Object.values(bundle.locations)
     .filter((location) => evaluateCondition(location.availableWhen, context))
-    .map((location) => ({
-      locationId: location.locationId,
-      name: readableText(bundle, location.nameContentId, context),
-      searchMode: location.searchPolicy.mode,
-    }));
+    .map((location) => {
+      const availableClues = location.cluePool
+        .filter((entry) => (
+          !context.roomHeldClueIds.has(entry.clueId)
+          && evaluateCondition(entry.availableWhen, context)
+          && Boolean(bundle.clues[entry.clueId])
+          && evaluateCondition(bundle.clues[entry.clueId].acquisition.when, context)
+        ))
+        .sort((left, right) => left.order - right.order)
+        .map((entry) => ({ clueId: entry.clueId, number: entry.order }));
+      const clueChoices = location.searchPolicy.mode === 'fixed_sequence'
+        ? availableClues.slice(0, 1)
+        : availableClues;
+      return {
+        locationId: location.locationId,
+        name: readableText(bundle, location.nameContentId, context),
+        searchMode: location.searchPolicy.mode,
+        clueChoices,
+      };
+    });
 }
 
 export function projectVisibleClues(bundle: BlindBundle, context: AuthorizationContext) {
@@ -372,8 +387,11 @@ export function projectVisibleClues(bundle: BlindBundle, context: AuthorizationC
     ))
     .map((clue) => ({
       clueId: clue.clueId,
+      isHeld: context.heldClueIds.has(clue.clueId),
+      isPublished: context.publishedClueIds.has(clue.clueId),
       canPublish: clue.publication.allowed
         && context.heldClueIds.has(clue.clueId)
+        && !context.publishedClueIds.has(clue.clueId)
         && evaluateCondition(clue.publication.publishWhen, context),
       faces: clue.faces
         .filter((face) => evaluateCondition(face.revealWhen, context))

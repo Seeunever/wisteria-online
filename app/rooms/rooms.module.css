@@ -266,7 +266,8 @@
   .headerInner { min-height: 64px; }
   .brandMark { width: 34px; height: 34px; }
   .brandText small,
-  .userName { display: none; }
+  .brandText small { display: none; }
+  .userName { display: block; max-width: 150px; font-size: 11px; }
   .brandText strong { font-size: 16px; }
   .logoutButton { padding-right: 0; }
   .hero { min-height: 0; padding: 64px 0 42px; }

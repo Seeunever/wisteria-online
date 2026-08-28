@@ -11,32 +11,10 @@ import {
   projectVisibleClues,
   withEligibleHostReleases,
   type AuthorizationContext,
-  type ProjectedContent,
 } from '@/lib/blind-runtime';
+import { ProtectedContent } from './protected-content';
 
 export const dynamic = 'force-dynamic';
-
-function ProtectedContent({
-  code,
-  content,
-}: {
-  code: string;
-  content: ProjectedContent;
-}) {
-  if (content.kind === 'text') return <p>{content.text}</p>;
-  return Array.from({ length: content.parts }, (_, part) => (
-    // The protected route re-derives current room authorization on every request.
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      className="protected-scan"
-      key={`${content.contentId}-${part}`}
-      src={`/api/rooms/${code}/content/${content.contentId}?part=${part}`}
-      alt="已授权的剧本内容"
-      loading="lazy"
-      referrerPolicy="no-referrer"
-    />
-  ));
-}
 
 type RoomPageProps = {
   params: Promise<{ code: string }>;
@@ -59,7 +37,9 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
         : error === 'advance'
           ? '当前阶段还不满足推进条件；少人测试时，缺席角色相关内容可能无法完成。'
           : error === 'delete'
-            ? '房间没有删除成功。只有房主确认后才能删除。'
+            ? '房间没有删除成功。只有仍在房间内的玩家确认后才能删除。'
+            : error === 'search'
+              ? '没有取得这张线索。它可能刚被别人拿走，或本阶段的调查次数已经用完。'
           : null;
   const isOwner = room.ownerUserId === user.id;
   const packs = isOwner && !room.versionId ? listFrozenPackVersions() : [];
@@ -138,8 +118,12 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
   return (
     <main className="rooms-shell">
       <header className="room-header">
-        <Link className="brand" href="/rooms"><span className="brand-mark" aria-hidden="true">暗</span><span><strong>暗格</strong><small>返回房间大厅</small></span></Link>
-        <span className="room-code">房间 {room.code}</span>
+        <Link className="brand" href="/rooms"><span className="brand-mark" aria-hidden="true">暗</span><span><strong>暗格</strong><small>当前玩家：{user.displayName}</small></span></Link>
+        <div className="room-toolbar">
+          <span className="room-player">当前玩家：{user.displayName}</span>
+          <Link className="room-refresh" href={`/rooms/${room.code}`}>刷新状态</Link>
+          <span className="room-code">房间 {room.code}</span>
+        </div>
       </header>
       <section className="live-room-hero">
         <div><p className="eyebrow">{room.status.toUpperCase()}</p><h1>{room.versionId ? (room.packLabel ?? '剧本版本已锁定') : '等待房主选择剧本'}</h1><p>{room.versionId ? roomProgress : '样本拆解完成并冻结后，房主可以在这里装载。'}</p></div>
@@ -233,57 +217,50 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
         </section>
       ) : null}
       {room.status === 'running' && availableLocations.length ? (
-        <section className="members-section">
+        <section className="members-section location-section">
           <p className="eyebrow">SEARCH</p>
-          <h2>当前可调查地点</h2>
-          <div className="member-list">
+          <h2>先选择调查地点</h2>
+          <p className="section-guidance">展开地点后，再从尚未取走的线索背面中选择一张。打开前不会显示线索内容。</p>
+          <div className="location-list">
             {availableLocations.map((location, index) => (
-              <div key={location.locationId}>
-                <span>{String(index + 1).padStart(2, '0')}</span>
-                <strong>{location.name ?? `地点 ${index + 1}`}</strong>
-                {['draw_without_replacement', 'fixed_sequence'].includes(location.searchMode) ? (
-                  <form action={`/api/rooms/${room.code}/search`} method="post">
-                    <input type="hidden" name="locationId" value={location.locationId} />
-                    <button type="submit">调查</button>
-                  </form>
-                ) : location.searchMode === 'host_dealt' && isOwner ? (
-                  <div className="deal-controls">
-                    {room.members.filter((member) => member.assignedRoleId).map((member) => (
-                      <form action={`/api/rooms/${room.code}/clues/deal`} method="post" key={member.membershipId}>
-                        <input type="hidden" name="locationId" value={location.locationId} />
-                        <input type="hidden" name="targetMembershipId" value={member.membershipId} />
-                        <button type="submit">发给 {member.displayName}</button>
-                      </form>
-                    ))}
-                  </div>
-                ) : <small>本阶段自动处理</small>}
-              </div>
+              <details className="location-card" key={location.locationId}>
+                <summary>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  <strong>{location.name ?? `地点 ${index + 1}`}</strong>
+                  <small>{location.clueChoices.length ? `${location.clueChoices.length} 张可选` : '暂无可选线索'}</small>
+                </summary>
+                <div className="clue-choice-grid">
+                  {location.clueChoices.length ? location.clueChoices.map((choice) => (
+                    <form action={`/api/rooms/${room.code}/search`} method="post" key={choice.clueId}>
+                      <input type="hidden" name="locationId" value={location.locationId} />
+                      <input type="hidden" name="clueId" value={choice.clueId} />
+                      <button type="submit" aria-label={`选择第 ${choice.number} 张线索`}>
+                        <span aria-hidden="true">?</span>
+                        <strong>线索 {String(choice.number).padStart(2, '0')}</strong>
+                        <small>点击取得并打开</small>
+                      </button>
+                    </form>
+                  )) : <p className="empty-state">这个地点当前没有可以取得的线索。</p>}
+                </div>
+              </details>
             ))}
           </div>
         </section>
       ) : null}
       {visibleClues.length ? (
-        <section className="members-section">
+        <section className="members-section clue-index-section">
           <p className="eyebrow">CLUES</p>
-          <h2>你现在可以查看的线索</h2>
+          <h2>已取得与已公开线索</h2>
+          <p className="section-guidance">私藏线索只对持有者可见；公开后才会进入所有玩家的看板。</p>
+          <div className="clue-index-list">
           {visibleClues.map((clue, clueIndex) => (
-            <article key={clue.clueId} className="empty-state">
-              <strong>线索 {String(clueIndex + 1).padStart(2, '0')}</strong>
-              {clue.faces.map((face) => (
-                <div key={face.faceId}>
-                  {face.content.map((content, index) => (
-                    <ProtectedContent key={`${face.faceId}-${index}`} code={room.code} content={content} />
-                  ))}
-                </div>
-              ))}
-              {clue.canPublish ? (
-                <form action={`/api/rooms/${room.code}/clues/publish`} method="post">
-                  <input type="hidden" name="clueId" value={clue.clueId} />
-                  <button type="submit">向全房间公开</button>
-                </form>
-              ) : null}
-            </article>
+            <Link className="clue-index-card" key={clue.clueId} href={`/rooms/${room.code}/clues/${clue.clueId}`}>
+              <span>{String(clueIndex + 1).padStart(2, '0')}</span>
+              <strong>打开线索</strong>
+              <small>{clue.isPublished ? '全房间已公开' : clue.isHeld ? '仅自己可见' : '房间公开线索'}</small>
+            </Link>
           ))}
+          </div>
         </section>
       ) : null}
       {isOwner && room.versionId && room.status === 'lobby' && packRoleCount > 0
@@ -355,25 +332,24 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
         </section>
       ) : null}
       <section className="members-section"><p className="eyebrow">PLAYERS</p><h2>已到场</h2><div className="member-list">{room.members.map((member, index) => <div key={member.membershipId}><span>{String(index + 1).padStart(2, '0')}</span><strong>{member.displayName}</strong><small>{member.isOwner ? '房主' : member.assignedRoleId ? '已选角色' : '未选角色'}</small></div>)}</div></section>
-      {isOwner ? (
-        <section className="members-section room-danger-zone">
-          <p className="eyebrow">ROOM MANAGEMENT</p>
-          <h2>房间管理</h2>
-          <details>
-            <summary>删除这个房间</summary>
-            <div>
-              <p>删除后，成员、选角、阶段和线索状态都会一并清除，无法恢复。</p>
-              <form action={`/api/rooms/${room.code}/delete`} method="post">
-                <label>
-                  <input type="checkbox" name="confirmDelete" value="yes" required />
-                  我确认删除这个房间及本局进度。
-                </label>
-                <button type="submit">确认删除房间</button>
-              </form>
-            </div>
-          </details>
-        </section>
-      ) : null}
+      <section className="members-section room-danger-zone">
+        <p className="eyebrow">ROOM MANAGEMENT</p>
+        <h2>房间管理</h2>
+        <p className="section-guidance">所有仍在房间内的玩家都可以刷新状态或删除房间。</p>
+        <details>
+          <summary>删除这个房间</summary>
+          <div>
+            <p>删除后，成员、选角、阶段和线索状态都会一并清除，无法恢复。</p>
+            <form action={`/api/rooms/${room.code}/delete`} method="post">
+              <label>
+                <input type="checkbox" name="confirmDelete" value="yes" required />
+                我确认删除这个房间及本局进度。
+              </label>
+              <button type="submit">确认删除房间</button>
+            </form>
+          </div>
+        </details>
+      </section>
     </main>
   );
 }

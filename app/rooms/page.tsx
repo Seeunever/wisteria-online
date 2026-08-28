@@ -107,10 +107,7 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
           </nav>
 
           <div className={styles.account}>
-            <span className={styles.userName}>{user.displayName}</span>
-            <form action="/api/auth/logout" method="post">
-              <button className={styles.logoutButton} type="submit">退出</button>
-            </form>
+            <span className={styles.userName}>当前玩家：{user.displayName}</span>
           </div>
         </div>
       </header>
@@ -120,7 +117,7 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
         <div className={styles.heroCopy}>
           <p className={styles.eyebrow}><span aria-hidden="true" /> FRIENDS LOBBY</p>
           <h1 id="lobby-title">今晚开的房间，<em>都在这里。</em></h1>
-          <p>注册后可以直接查看当前房间，点一下加入；也可以自己选择剧本开一张新桌子。</p>
+          <p>本机首次登记用户名后会自动记住身份。以后直接查看当前房间，点一下加入；也可以自己选择剧本开一张新桌子。</p>
         </div>
         <dl className={styles.lobbyStats} aria-label="我的大厅摘要">
           <div><dt>当前房间</dt><dd>{currentCount}</dd></div>
@@ -204,7 +201,7 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
           <span className={styles.brandMark} aria-hidden="true">藤</span>
           <span className={styles.brandText}><strong>暗格</strong><small>让秘密留在该留的位置</small></span>
         </Link>
-        <p>房间大厅 · 登录后可查看全部当前房间</p>
+        <p>房间大厅 · 本机身份可查看全部当前房间</p>
       </footer>
     </main>
   );

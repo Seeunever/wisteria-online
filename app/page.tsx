@@ -50,12 +50,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
           <div className={styles.accountActions}>
             {user ? (
-              <>
-                <span className={styles.userChip}>{user.displayName}</span>
-                <form action="/api/auth/logout" method="post">
-                  <button className={styles.logoutButton} type="submit">退出</button>
-                </form>
-              </>
+              <span className={styles.userChip}>当前玩家：{user.displayName}</span>
             ) : null}
             <a className={styles.headerCta} href={accountHref}>
               {user ? '我的房间' : '玩家入口'}
@@ -101,19 +96,19 @@ export default async function Home({ searchParams }: HomeProps) {
                 <section className={styles.welcomePanel} id="account" aria-labelledby="welcome-title">
                   <div className={styles.authHeading}>
                     <div>
-                      <p className={styles.panelKicker}>SESSION ACTIVE</p>
+                    <p className={styles.panelKicker}>DEVICE PROFILE</p>
                       <h2 id="welcome-title">欢迎回来，{user.displayName}</h2>
                     </div>
-                    <span className={styles.onlineBadge}><i aria-hidden="true" /> 已登录</span>
+                    <span className={styles.onlineBadge}><i aria-hidden="true" /> 本机身份</span>
                   </div>
                   <p className={styles.welcomeCopy}>
-                    你的房间、角色与线索权限已经准备好。进入大厅继续上一局，或者创建一个新房间。
+                    这台设备已经认出你，不需要再次登录。进入大厅继续上一局，或者创建一个新房间。
                   </p>
                   <Link className={styles.authSubmit} href="/rooms">
                     进入房间大厅 <span aria-hidden="true">→</span>
                   </Link>
                   <dl className={styles.sessionFacts}>
-                    <div><dt>身份</dt><dd>已验证玩家</dd></div>
+                    <div><dt>身份</dt><dd>{user.displayName}</dd></div>
                     <div><dt>私密内容</dt><dd>按房间授权</dd></div>
                     <div><dt>公开线索</dt><dd>主动公开后可见</dd></div>
                   </dl>

@@ -226,6 +226,10 @@ footer p { color: #7e7066; font-size: .68rem; }
 .rooms-shell { width: min(100% - 2rem, 70rem); margin: auto; padding-bottom: 6rem; }
 .room-header { display: flex; align-items: center; justify-content: space-between; min-height: 76px; border-bottom: 1px solid var(--line); }
 .room-header > div { display: flex; align-items: center; gap: 1rem; color: var(--muted); font-size: .75rem; }
+.room-toolbar { justify-content: flex-end; }
+.room-player { max-width: 15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-refresh { min-height: 40px; padding: .75rem .9rem; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); background: rgb(255 255 255 / 3%); font-weight: 750; }
+.room-refresh:hover { border-color: rgb(201 170 107 / 52%); }
 .rooms-hero { padding: 6rem 0 3rem; }
 .rooms-hero > p:last-child { max-width: 42rem; }
 .room-actions-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
@@ -260,10 +264,43 @@ footer p { color: #7e7066; font-size: .68rem; }
 .members-section button:disabled { border-color: var(--line); color: #83798a; background: #241d2b; cursor: not-allowed; }
 .members-section article.empty-state { margin-top: 1rem; padding: 1.2rem; border: 1px solid var(--line); border-radius: .7rem; color: var(--ink); background: rgb(255 255 255 / 2%); }
 .protected-scan { display: block; width: 100%; height: auto; margin-top: 1rem; border-radius: .9rem; }
-.deal-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
-.deal-controls form { margin: 0; }
 .members-section article p { white-space: pre-wrap; line-height: 1.8; }
 .role-section-label { display: block; margin-bottom: .75rem; color: var(--gold); font-size: .74rem; letter-spacing: .08em; }
+.section-guidance { max-width: 44rem; margin: .75rem 0 0; color: var(--muted); font-size: .8rem; line-height: 1.75; }
+.location-list { display: grid; gap: .75rem; margin-top: 1.5rem; }
+.location-card { overflow: hidden; border: 1px solid var(--line); border-radius: .85rem; background: rgb(255 255 255 / 2%); }
+.location-card[open] { border-color: rgb(201 170 107 / 38%); background: rgb(201 170 107 / 4%); }
+.location-card > summary { display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; gap: .8rem; align-items: center; min-height: 68px; padding: .8rem 1rem; cursor: pointer; list-style: none; }
+.location-card > summary::-webkit-details-marker { display: none; }
+.location-card > summary::after { grid-column: 3; grid-row: 1; margin-left: .35rem; color: var(--gold); content: '+'; font-size: 1.2rem; }
+.location-card[open] > summary::after { content: '−'; }
+.location-card > summary > span { color: var(--gold); font: 700 .68rem/1 monospace; }
+.location-card > summary > strong { min-width: 0; }
+.location-card > summary > small { grid-column: 3; grid-row: 1; margin-right: 2rem; color: var(--muted); font-size: .7rem; }
+.clue-choice-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; padding: 1rem; border-top: 1px solid var(--line); }
+.clue-choice-grid form { display: block; margin: 0; }
+.clue-choice-grid button { display: grid; width: 100%; min-height: 9rem; padding: 1rem .75rem; place-items: center; border-color: rgb(201 170 107 / 38%); color: var(--ink); background: linear-gradient(145deg, rgb(201 170 107 / 9%), rgb(121 85 163 / 8%)); }
+.clue-choice-grid button > span { display: grid; width: 2.7rem; height: 2.7rem; place-items: center; border: 1px solid rgb(201 170 107 / 48%); border-radius: 50%; color: var(--gold); font: 700 1rem/1 serif; }
+.clue-choice-grid button > strong { font-size: .78rem; }
+.clue-choice-grid button > small { color: var(--muted); font-size: .65rem; }
+.clue-choice-grid button:hover { border-color: var(--gold); background: rgb(201 170 107 / 12%); }
+.clue-choice-grid > .empty-state { grid-column: 1 / -1; margin: 0; }
+.clue-index-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .7rem; margin-top: 1.4rem; }
+.clue-index-card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .45rem .8rem; padding: 1rem; border: 1px solid var(--line); border-radius: .75rem; background: rgb(255 255 255 / 2%); }
+.clue-index-card:hover { border-color: rgb(201 170 107 / 46%); }
+.clue-index-card > span { grid-row: 1 / 3; color: var(--gold); font: 700 .7rem/1 monospace; }
+.clue-index-card > small { color: var(--muted); font-size: .68rem; }
+.clue-reader-shell { min-height: 100svh; }
+.clue-reader { width: min(100%, 54rem); margin: auto; padding: clamp(4rem, 10vw, 7rem) 0 7rem; }
+.clue-reader h1 { margin: 0; font: 600 clamp(2.6rem, 7vw, 5.2rem)/1.05 'STKaiti', 'KaiTi', 'Songti SC', serif; }
+.clue-visibility { margin: 1rem 0 0; color: var(--muted); line-height: 1.75; }
+.clue-content-card { margin-top: 2rem; padding: clamp(1rem, 3vw, 1.6rem); border: 1px solid var(--line); border-radius: 1rem; background: rgb(255 255 255 / 3%); }
+.clue-content-card p { white-space: pre-wrap; line-height: 1.8; }
+.clue-decision-bar { position: sticky; bottom: 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: 1rem; padding: .75rem; border: 1px solid var(--line); border-radius: .9rem; background: rgb(18 13 27 / 90%); box-shadow: 0 1rem 3rem rgb(0 0 0 / 34%); backdrop-filter: blur(16px); }
+.clue-decision-bar form { display: block; margin: 0; }
+.clue-decision-bar a, .clue-decision-bar button { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: center; border-radius: .65rem; font-weight: 800; }
+.clue-hide-button { border: 1px solid var(--line); color: var(--ink); background: rgb(255 255 255 / 3%); }
+.clue-decision-bar button { border: 1px solid var(--gold); color: #171216; background: var(--gold); cursor: pointer; }
 .room-alert { margin: 1.5rem 0 0; padding: .9rem 1rem; border: 1px solid rgb(215 154 176 / 40%); border-radius: .7rem; color: #f0c7d5; background: rgb(116 47 72 / 18%); font-size: .8rem; line-height: 1.65; }
 .force-start-section > .empty-state { display: block; margin-top: 1rem; padding: 1rem 1.1rem; border: 1px solid rgb(201 170 107 / 28%); border-radius: .7rem; background: rgb(201 170 107 / 5%); line-height: 1.75; }
 .force-start-confirmation { margin-top: 1rem; border: 1px solid rgb(215 154 176 / 34%); border-radius: .75rem; background: rgb(116 47 72 / 12%); }
@@ -292,6 +329,7 @@ footer p { color: #7e7066; font-size: .68rem; }
   .section-heading, .workflow-section { grid-template-columns: 1fr; gap: 2rem; }
   .account-section, .live-room-hero { grid-template-columns: 1fr; gap: 2rem; }
   .room-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .clue-choice-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 560px) {
@@ -324,6 +362,18 @@ footer p { color: #7e7066; font-size: .68rem; }
   .integrity-strip div { border-right: 0; border-bottom: 1px solid var(--line); }
   .integrity-strip div:last-child { border-bottom: 0; }
   footer { align-items: flex-start; flex-direction: column; gap: 1.5rem; }
+  .room-header { gap: .75rem; }
+  .room-toolbar { gap: .45rem !important; }
+  .room-player { display: none; }
+  .room-header .brand small { display: block; max-width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .room-refresh { min-height: 36px; padding: .65rem .75rem; font-size: .68rem; }
+  .room-code { padding: .5rem .65rem; font-size: .65rem; }
+  .location-card > summary { grid-template-columns: 2.2rem minmax(0, 1fr) auto; padding: .75rem; }
+  .location-card > summary > small { font-size: .65rem; }
+  .clue-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: .75rem; }
+  .clue-choice-grid button { min-height: 8rem; }
+  .clue-index-list { grid-template-columns: 1fr; }
+  .clue-decision-bar { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }

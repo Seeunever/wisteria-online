@@ -275,11 +275,21 @@ try {
     INSERT INTO clue_holdings (room_id, clue_id, holder_membership_id, acquired_at)
     VALUES (?, ?, ?, ?)
   `).run(runningRoom.id, clueCase.clue.clueId, users[0].runningMembershipId, now);
-  const holderHtml = await (await get(`/rooms/${runningRoom.code}`, users[0])).text();
-  const otherHtml = await (await get(`/rooms/${runningRoom.code}`, users[1])).text();
+  const holderResponse = await get(
+    `/rooms/${runningRoom.code}/clues/${clueCase.clue.clueId}`,
+    users[0],
+  );
+  const otherResponse = await get(
+    `/rooms/${runningRoom.code}/clues/${clueCase.clue.clueId}`,
+    users[1],
+  );
+  const holderHtml = await holderResponse.text();
+  const otherHtml = await otherResponse.text();
   const clueContents = clueCase.projected.faces.flatMap((face) => face.content);
   if (
-    !clueContents.some((content) => markerVisible(content, holderHtml))
+    holderResponse.status !== 200
+    || otherResponse.status !== 404
+    || !clueContents.some((content) => markerVisible(content, holderHtml))
     || clueContents.some((content) => markerVisible(content, otherHtml))
   ) blocked();
   if (clueCase.projected.canPublish) {
@@ -295,13 +305,20 @@ try {
       WHERE room_id = ? AND clue_id = ?
     `).get(runningRoom.id, clueCase.clue.clueId) as { value: number | null } | undefined;
     if (published?.value == null) blocked();
+    const publishedResponse = await get(
+      `/rooms/${runningRoom.code}/clues/${clueCase.clue.clueId}`,
+      users[1],
+    );
+    const publishedHtml = await publishedResponse.text();
+    if (
+      publishedResponse.status !== 200
+      || !clueContents.some((content) => markerVisible(content, publishedHtml))
+    ) blocked();
   }
 
-  await post(`/api/rooms/${deleteRoom.code}/delete`, users[1], { confirmDelete: 'yes' });
-  if (!database.prepare('SELECT id FROM rooms WHERE id = ?').get(deleteRoom.id)) blocked();
   const deleteResponse = await post(
     `/api/rooms/${deleteRoom.code}/delete`,
-    users[0],
+    users[1],
     { confirmDelete: 'yes' },
   );
   if (

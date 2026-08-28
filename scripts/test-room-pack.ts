@@ -78,9 +78,9 @@ test('room versions freeze atomically and incomplete starts require an explicit 
     const deletedCode = createRoom('user-owner', 'ver_aaaaaaaa');
     assert.notEqual(deletedCode, null);
     assert.equal(joinRoom('user-other', deletedCode!), true);
-    assert.equal(deleteRoom(deletedCode!, 'user-other'), false);
+    assert.equal(deleteRoom(deletedCode!, 'user-stranger'), false);
     assert.notEqual(getRoomForMember(deletedCode!, 'user-owner'), null);
-    assert.equal(deleteRoom(deletedCode!, 'user-owner'), true);
+    assert.equal(deleteRoom(deletedCode!, 'user-other'), true);
     assert.equal(getRoomForMember(deletedCode!, 'user-owner'), null);
     assert.equal(
       (database.prepare('SELECT COUNT(*) AS count FROM memberships WHERE room_id NOT IN (SELECT id FROM rooms)').get() as { count: number }).count,
@@ -193,12 +193,14 @@ test('room versions freeze atomically and incomplete starts require an explicit 
     assert.equal(searchLocation({
       code: code!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
       locationId: 'loc_aaaaaaaa', stageId: 'stage_aaaaaaaa',
+      selectedClueId: 'clue_aaaaaaaa',
       eligibleClueIds: ['clue_aaaaaaaa'], mode: 'fixed_sequence',
       perPlayerLimit: 1, globalLimit: 1,
     }), true);
     assert.equal(searchLocation({
       code: code!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
       locationId: 'loc_aaaaaaaa', stageId: 'stage_aaaaaaaa',
+      selectedClueId: 'clue_bbbbbbbb',
       eligibleClueIds: ['clue_bbbbbbbb'], mode: 'fixed_sequence',
       perPlayerLimit: 1, globalLimit: 1,
     }), false);

@@ -22,7 +22,10 @@ export async function POST(
     }
     const form = await request.formData();
     const locationId = form.get('locationId');
-    if (typeof locationId !== 'string') throw new Error('SEARCH_REJECTED');
+    const clueId = form.get('clueId');
+    if (typeof locationId !== 'string' || typeof clueId !== 'string') {
+      throw new Error('SEARCH_REJECTED');
+    }
     const bundle = loadFrozenBundle(room.versionId);
     const stage = bundle.stages[activeStageId];
     const location = bundle.locations[locationId];
@@ -30,7 +33,6 @@ export async function POST(
       !stage?.allowedActions.includes('search')
       || !location
       || !stage.locationIds.includes(locationId)
-      || !['draw_without_replacement', 'fixed_sequence'].includes(location.searchPolicy.mode)
     ) throw new Error('SEARCH_REJECTED');
 
     const assignedRoleIds = new Set(
@@ -59,18 +61,23 @@ export async function POST(
       ))
       .sort((left, right) => left.order - right.order)
       .map((entry) => entry.clueId);
+    const selectableClueIds = location.searchPolicy.mode === 'fixed_sequence'
+      ? eligibleClueIds.filter((candidate) => !context.roomHeldClueIds.has(candidate)).slice(0, 1)
+      : eligibleClueIds.filter((candidate) => !context.roomHeldClueIds.has(candidate));
+    if (!selectableClueIds.includes(clueId)) throw new Error('SEARCH_REJECTED');
     if (!searchLocation({
       code: room.code,
       userId: user.id,
       versionId: room.versionId,
       locationId,
       stageId: activeStageId,
+      selectedClueId: clueId,
       eligibleClueIds,
-      mode: location.searchPolicy.mode as 'draw_without_replacement' | 'fixed_sequence',
+      mode: location.searchPolicy.mode,
       perPlayerLimit: location.searchPolicy.perPlayerLimit,
       globalLimit: location.searchPolicy.globalLimit,
     })) throw new Error('SEARCH_REJECTED');
-    return NextResponse.redirect(new URL(`/rooms/${code}`, origin), 303);
+    return NextResponse.redirect(new URL(`/rooms/${code}/clues/${clueId}`, origin), 303);
   } catch {
     return NextResponse.redirect(new URL(`/rooms/${code}?error=search`, origin), 303);
   }

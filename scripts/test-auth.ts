@@ -9,7 +9,7 @@ test('username-only identity remains bound to its original device credential', a
   process.env.WISTERIA_DATA_DIR = temporaryRoot;
   let closeDatabase: (() => void) | undefined;
   try {
-    const [{ claimIdentity }, { getDatabase }] = await Promise.all([
+    const [{ claimIdentity, getIdentityForDevice }, { getDatabase }] = await Promise.all([
       import('../lib/identity.ts'),
       import('../lib/db.ts'),
     ]);
@@ -31,6 +31,10 @@ test('username-only identity remains bound to its original device credential', a
       status: 'device-bound',
     });
     assert.deepEqual(claimIdentity('不允许。'), { status: 'invalid' });
+    const deviceIdentity = getIdentityForDevice(created.deviceToken ?? undefined);
+    assert.equal(deviceIdentity?.id, created.user.id);
+    assert.equal(deviceIdentity?.displayName, created.user.displayName);
+    assert.equal(getIdentityForDevice('invalid'), null);
     const userCount = database.prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number };
     const credentialCount = database.prepare(
       'SELECT COUNT(*) AS count FROM device_credentials',

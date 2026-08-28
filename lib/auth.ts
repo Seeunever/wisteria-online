@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { cookies } from 'next/headers';
 import type { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from './db';
+import { getIdentityForDevice } from './identity';
 
 export const SESSION_COOKIE = 'wisteria_session';
 export const DEVICE_COOKIE = 'wisteria_device';
@@ -70,9 +71,12 @@ export function clearSession(response: NextResponse, token?: string) {
 }
 
 export async function getCurrentUser() {
-  return lookupSession((await cookies()).get(SESSION_COOKIE)?.value);
+  const cookieStore = await cookies();
+  return lookupSession(cookieStore.get(SESSION_COOKIE)?.value)
+    ?? getIdentityForDevice(cookieStore.get(DEVICE_COOKIE)?.value);
 }
 
 export function getRequestUser(request: NextRequest) {
-  return lookupSession(request.cookies.get(SESSION_COOKIE)?.value);
+  return lookupSession(request.cookies.get(SESSION_COOKIE)?.value)
+    ?? getIdentityForDevice(request.cookies.get(DEVICE_COOKIE)?.value);
 }

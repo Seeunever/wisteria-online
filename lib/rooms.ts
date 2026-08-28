@@ -1,4 +1,4 @@
-import { randomBytes, randomInt, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { getDatabase } from './db.ts';
 
 const ROOM_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -105,7 +105,7 @@ export function listRooms(userId: string) {
   }>;
 }
 
-export function deleteRoom(codeInput: string, ownerUserId: string) {
+export function deleteRoom(codeInput: string, memberUserId: string) {
   const code = codeInput.normalize('NFKC').trim().toUpperCase();
   if (!/^[23456789A-HJ-NP-Z]{6}$/.test(code)) return false;
 
@@ -114,8 +114,14 @@ export function deleteRoom(codeInput: string, ownerUserId: string) {
     database.exec('BEGIN IMMEDIATE');
     const deleted = database.prepare(`
       DELETE FROM rooms
-      WHERE code = ? AND owner_user_id = ?
-    `).run(code, ownerUserId);
+      WHERE code = ?
+        AND EXISTS (
+          SELECT 1 FROM memberships
+          WHERE memberships.room_id = rooms.id
+            AND memberships.user_id = ?
+            AND memberships.left_at IS NULL
+        )
+    `).run(code, memberUserId);
     if (deleted.changes !== 1) {
       database.exec('ROLLBACK');
       return false;
@@ -372,8 +378,9 @@ export function searchLocation(input: {
   versionId: string;
   locationId: string;
   stageId: string;
+  selectedClueId: string;
   eligibleClueIds: string[];
-  mode: 'draw_without_replacement' | 'fixed_sequence';
+  mode: 'draw_without_replacement' | 'fixed_sequence' | 'all_visible' | 'host_dealt';
   perPlayerLimit: number | null;
   globalLimit: number | null;
 }) {
@@ -382,6 +389,7 @@ export function searchLocation(input: {
     || !/^ver_[0-9a-f]{8,64}$/.test(input.versionId)
     || !/^loc_[0-9a-f]{8,64}$/.test(input.locationId)
     || !/^stage_[0-9a-f]{8,64}$/.test(input.stageId)
+    || !/^clue_[0-9a-f]{8,64}$/.test(input.selectedClueId)
     || input.eligibleClueIds.length === 0
     || input.eligibleClueIds.some((id) => !/^clue_[0-9a-f]{8,64}$/.test(id))
     || new Set(input.eligibleClueIds).size !== input.eligibleClueIds.length
@@ -441,7 +449,11 @@ export function searchLocation(input: {
     }
     const clueId = input.mode === 'fixed_sequence'
       ? candidates[0]
-      : candidates[randomInt(candidates.length)];
+      : input.selectedClueId;
+    if (clueId !== input.selectedClueId || !candidates.includes(clueId)) {
+      database.exec('ROLLBACK');
+      return false;
+    }
     database.prepare(`
       INSERT INTO clue_holdings (room_id, clue_id, holder_membership_id, acquired_at)
       VALUES (?, ?, ?, ?)

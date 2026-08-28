@@ -247,7 +247,13 @@ test('locations and held clues follow stage and ownership state', () => {
     activeStageId: 'stage_aaaaaaaa',
     reachedStageIds: new Set(['stage_aaaaaaaa']),
   });
-  assert.equal(projectAvailableLocations(bundle, assigned).length, 1);
+  const locations = projectAvailableLocations(bundle, assigned);
+  assert.equal(locations.length, 1);
+  assert.deepEqual(locations[0].clueChoices, [{ clueId: 'clue_aaaaaaaa', number: 1 }]);
+  assert.deepEqual(projectAvailableLocations(bundle, {
+    ...assigned,
+    roomHeldClueIds: new Set(['clue_aaaaaaaa']),
+  })[0].clueChoices, []);
   assert.equal(JSON.stringify(projectVisibleClues(bundle, assigned)).includes(CLUE_CANARY), false);
   const holder = {
     ...assigned,
@@ -255,6 +261,8 @@ test('locations and held clues follow stage and ownership state', () => {
     roomHeldClueIds: new Set(['clue_aaaaaaaa']),
   };
   assert.equal(JSON.stringify(projectVisibleClues(bundle, holder)).includes(CLUE_CANARY), true);
+  assert.equal(projectVisibleClues(bundle, holder)[0].isHeld, true);
+  assert.equal(projectVisibleClues(bundle, holder)[0].isPublished, false);
   assert.equal(JSON.stringify(projectVisibleClues(bundle, context({
     ...assigned,
     assignedRoleId: 'role_bbbbbbbb',

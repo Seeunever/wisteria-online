@@ -12,6 +12,17 @@ function tokenHash(token: string) {
   return createHash('sha256').update(token, 'ascii').digest('hex');
 }
 
+export function getIdentityForDevice(token: string | undefined): IdentityUser | null {
+  if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+  const row = getDatabase().prepare(`
+    SELECT users.id AS id, users.display_name AS displayName
+    FROM device_credentials
+    JOIN users ON users.id = device_credentials.user_id
+    WHERE device_credentials.token_hash = ?
+  `).get(tokenHash(token)) as IdentityUser | undefined;
+  return row ?? null;
+}
+
 export function claimIdentity(displayNameInput: string, currentDeviceToken?: string): IdentityResult {
   const displayName = displayNameInput.normalize('NFKC').trim();
   if (!validDisplayName(displayName)) return { status: 'invalid' };

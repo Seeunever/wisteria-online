@@ -6,12 +6,19 @@ import {
   DEVICE_COOKIE,
 } from '@/lib/auth';
 import { claimIdentity } from '@/lib/identity';
-import { assertSameOrigin } from '@/lib/security';
+import { assertSameOrigin, externalRequestOrigin } from '@/lib/security';
 
 export async function POST(request: NextRequest) {
   let origin = new URL(request.url).origin;
   try {
+    origin = externalRequestOrigin(request);
     origin = assertSameOrigin(request);
+  } catch {
+    console.warn('auth-enter: rejected request origin');
+    return NextResponse.redirect(new URL('/?auth=invalid#account', origin), 303);
+  }
+
+  try {
     const form = await request.formData();
     const result = claimIdentity(
       String(form.get('displayName') ?? ''),
@@ -25,6 +32,7 @@ export async function POST(request: NextRequest) {
     if (result.deviceToken) applyDeviceCookie(response, result.deviceToken);
     return response;
   } catch {
+    console.error('auth-enter: unexpected processing failure');
     return NextResponse.redirect(new URL('/?auth=invalid#account', origin), 303);
   }
 }

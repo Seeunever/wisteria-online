@@ -5,7 +5,6 @@ import styles from './home.module.css';
 
 export function AuthPanel({ error }: { error?: string }) {
   const [clientError, setClientError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const serverError = error === 'claimed'
     ? '这个用户名已经绑定在另一台设备上，请换一个名字。'
     : error === 'device-bound'
@@ -32,8 +31,9 @@ export function AuthPanel({ error }: { error?: string }) {
       input.focus();
       return;
     }
-    setClientError(null);
-    setSubmitting(true);
+    // Leave valid submissions entirely to the browser. A pending state cannot
+    // reliably clear when a response navigation is rejected by browser policy,
+    // which would leave the entry control permanently disabled.
   }
 
   return (
@@ -75,8 +75,8 @@ export function AuthPanel({ error }: { error?: string }) {
             required
           />
         </label>
-        <button className={styles.authSubmit} type="submit" disabled={submitting}>
-          {submitting ? '正在进入…' : '用这个名字进入'} <span aria-hidden="true">→</span>
+        <button className={styles.authSubmit} type="submit">
+          用这个名字进入 <span aria-hidden="true">→</span>
         </button>
       </form>
 

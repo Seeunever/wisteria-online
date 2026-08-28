@@ -541,11 +541,6 @@
   border-color: rgb(215 154 176 / 68%);
 }
 
-.authSubmit:disabled {
-  cursor: wait;
-  opacity: 0.72;
-}
-
 .authSubmit {
   position: relative;
   width: 100%;

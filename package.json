@@ -10,7 +10,7 @@
     "build": "next build && node scripts/prepare-standalone.mjs",
     "start": "next start",
     "lint": "eslint . --ignore-pattern .next",
-    "test:runtime": "node --test scripts/test-auth.ts scripts/test-blind-runtime.ts scripts/test-room-pack.ts",
+    "test:runtime": "node --test scripts/test-auth.ts scripts/test-blind-runtime.ts scripts/test-room-pack.ts scripts/test-security.ts",
     "install:pack": "node scripts/install-validated-pack.mjs"
   },
   "dependencies": {

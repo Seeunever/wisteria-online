@@ -1,0 +1,4 @@
+interface:
+  display_name: "盲玩剧本拆解"
+  short_description: "无剧透拆解、校验并安全接入可长期运行的剧本网站"
+  default_prompt: "使用 $blind-player 在不向我泄露任何剧透的前提下拆解这个剧本包，并把通过校验的版本安全接入网站。"

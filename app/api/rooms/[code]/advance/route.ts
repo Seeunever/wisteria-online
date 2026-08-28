@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUser } from '@/lib/auth';
 import {
-  evaluateCondition,
+  evaluateStageFlowCondition,
   withEligibleHostReleases,
   type AuthorizationContext,
 } from '@/lib/blind-runtime';
@@ -44,13 +44,20 @@ export async function POST(
       sessionCompleted: false,
     };
     const releasedContext = withEligibleHostReleases(bundle, context);
+    const simulatedFlowRoles = room.incompleteStart
+      ? new Set(Object.keys(bundle.roles))
+      : undefined;
     const nextStage = Object.values(bundle.stages).find(
       (stage) => stage.sequence === currentStage.sequence + 1,
     ) ?? null;
     const completionContext = nextStage
       ? releasedContext
       : { ...releasedContext, sessionCompleted: true };
-    if (!evaluateCondition(currentStage.completeWhen, completionContext)) {
+    if (!evaluateStageFlowCondition(
+      currentStage.completeWhen,
+      completionContext,
+      simulatedFlowRoles,
+    )) {
       throw new Error('ADVANCE_REJECTED');
     }
     const entryContext = {
@@ -58,7 +65,11 @@ export async function POST(
       activeStageId: null,
       reachedStageIds: new Set([...releasedContext.reachedStageIds, currentStage.stageId]),
     };
-    if (nextStage && !evaluateCondition(nextStage.enterWhen, entryContext)) {
+    if (nextStage && !evaluateStageFlowCondition(
+      nextStage.enterWhen,
+      entryContext,
+      simulatedFlowRoles,
+    )) {
       throw new Error('ADVANCE_REJECTED');
     }
     if (!advanceRoom({

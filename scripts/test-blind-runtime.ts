@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   canReadContent,
   evaluateCondition,
+  evaluateStageFlowCondition,
   projectAssignedRole,
   projectAvailableLocations,
   projectLobby,
@@ -186,6 +187,43 @@ test('each assignee receives only that role and never host material', () => {
   assert.equal(roleBJson.includes(ROLE_B_CANARY), true);
   assert.equal(roleBJson.includes(ROLE_A_CANARY), false);
   assert.equal(roleBJson.includes(HOST_CANARY), false);
+});
+
+test('an incomplete room assignment never widens role access', () => {
+  const partial = context({
+    assignedRoleId: 'role_aaaaaaaa',
+    assignedRoleIds: new Set(['role_aaaaaaaa']),
+    activeStageId: 'stage_aaaaaaaa',
+    reachedStageIds: new Set(['stage_aaaaaaaa']),
+  });
+  const assignedJson = JSON.stringify(projectAssignedRole(bundle, partial));
+  assert.equal(assignedJson.includes(ROLE_A_CANARY), true);
+  assert.equal(assignedJson.includes(ROLE_B_CANARY), false);
+  assert.equal(assignedJson.includes(HOST_CANARY), false);
+  assert.equal(evaluateStageFlowCondition(
+    { op: 'role_assigned', roleId: 'role_bbbbbbbb' },
+    partial,
+    new Set(['role_aaaaaaaa', 'role_bbbbbbbb']),
+  ), true);
+  const roleGatedReleaseBundle: BlindBundle = {
+    ...bundle,
+    hostPack: {
+      releasePlan: [{
+        releaseId: 'release_bbbbbbbb',
+        contentIds: ['cnt_dddddddd'],
+        when: { op: 'role_assigned', roleId: 'role_bbbbbbbb' },
+      }],
+    },
+  };
+  assert.equal(
+    withEligibleHostReleases(roleGatedReleaseBundle, partial).hostReleaseIds.size,
+    0,
+  );
+
+  const unassigned = { ...partial, assignedRoleId: null };
+  assert.equal(projectAssignedRole(bundle, unassigned), null);
+  assert.deepEqual(projectAvailableLocations(bundle, unassigned), []);
+  assert.deepEqual(projectVisibleClues(bundle, unassigned), []);
 });
 
 test('L3 content is denied even when presented with a system-only grant', () => {

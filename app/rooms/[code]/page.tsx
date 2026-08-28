@@ -4,7 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { listFrozenPackVersions, loadFrozenBundle } from '@/lib/packs';
 import {
-  evaluateCondition,
+  evaluateStageFlowCondition,
   projectAssignedRole,
   projectAvailableLocations,
   projectLobby,
@@ -38,12 +38,27 @@ function ProtectedContent({
   ));
 }
 
-export default async function RoomPage({ params }: { params: Promise<{ code: string }> }) {
+type RoomPageProps = {
+  params: Promise<{ code: string }>;
+  searchParams: Promise<{ error?: string | string[] }>;
+};
+
+export default async function RoomPage({ params, searchParams }: RoomPageProps) {
   const user = await getCurrentUser();
   if (!user) redirect('/#account');
-  const { code } = await params;
+  const [{ code }, query] = await Promise.all([params, searchParams]);
   const room = getRoomForMember(code, user.id);
   if (!room) notFound();
+  const error = Array.isArray(query.error) ? query.error[0] : query.error;
+  const errorMessage = error === 'start'
+    ? '没有开场。普通开场需要所有席位锁定；少人开场需要房主完成二次确认。'
+    : error === 'role'
+      ? '席位没有锁定成功，可能已经被其他玩家选择。'
+      : error === 'pack'
+        ? '剧本版本没有锁定成功，请重新选择可用的冻结版本。'
+        : error === 'advance'
+          ? '当前阶段还不满足推进条件；少人测试时，缺席角色相关内容可能无法完成。'
+          : null;
   const isOwner = room.ownerUserId === user.id;
   const packs = isOwner && !room.versionId ? listFrozenPackVersions() : [];
   const assignedRoleIds = new Set(
@@ -73,7 +88,7 @@ export default async function RoomPage({ params }: { params: Promise<{ code: str
     try {
       const bundle = loadFrozenBundle(room.versionId);
       packRoleCount = Object.keys(bundle.roles).length;
-      lobby = projectLobby(bundle, authorization);
+      lobby = room.status === 'lobby' ? projectLobby(bundle, authorization) : null;
       assignedRole = projectAssignedRole(bundle, authorization);
       availableLocations = projectAvailableLocations(bundle, authorization);
       visibleClues = projectVisibleClues(bundle, authorization);
@@ -82,18 +97,26 @@ export default async function RoomPage({ params }: { params: Promise<{ code: str
         : null;
       if (isOwner && room.status === 'running' && activeStage) {
         const released = withEligibleHostReleases(bundle, authorization);
+        const simulatedFlowRoles = room.incompleteStart
+          ? new Set(Object.keys(bundle.roles))
+          : undefined;
         const nextStage = Object.values(bundle.stages).find(
           (stage) => stage.sequence === activeStage.sequence + 1,
         );
-        const currentComplete = evaluateCondition(
+        const currentComplete = evaluateStageFlowCondition(
           activeStage.completeWhen,
           nextStage ? released : { ...released, sessionCompleted: true },
+          simulatedFlowRoles,
         );
-        const nextCanEnter = !nextStage || evaluateCondition(nextStage.enterWhen, {
-          ...released,
-          activeStageId: null,
-          reachedStageIds: new Set([...released.reachedStageIds, activeStage.stageId]),
-        });
+        const nextCanEnter = !nextStage || evaluateStageFlowCondition(
+          nextStage.enterWhen,
+          {
+            ...released,
+            activeStageId: null,
+            reachedStageIds: new Set([...released.reachedStageIds, activeStage.stageId]),
+          },
+          simulatedFlowRoles,
+        );
         canAdvance = currentComplete && nextCanEnter;
       }
     } catch {
@@ -108,9 +131,10 @@ export default async function RoomPage({ params }: { params: Promise<{ code: str
         <span className="room-code">房间 {room.code}</span>
       </header>
       <section className="live-room-hero">
-        <div><p className="eyebrow">{room.status.toUpperCase()}</p><h1>{room.versionId ? '剧本版本已锁定' : '等待房主选择剧本'}</h1><p>{room.versionId ? '当前房间只会读取这个不可变版本。' : '样本拆解完成并冻结后，房主可以在这里装载。'}</p></div>
+        <div><p className="eyebrow">{room.status.toUpperCase()}</p><h1>{room.versionId ? (room.packLabel ?? '剧本版本已锁定') : '等待房主选择剧本'}</h1><p>{room.versionId ? '当前房间只会读取这个不可变版本。' : '样本拆解完成并冻结后，房主可以在这里装载。'}</p></div>
         <div className="room-safety-card"><strong>权限版本 {room.authorizationVersion}</strong><p>每次角色、阶段或成员状态变化，旧的访问能力都会失效。</p></div>
       </section>
+      {errorMessage ? <p className="room-alert" role="alert">{errorMessage}</p> : null}
       {isOwner && !room.versionId ? (
         <section className="members-section">
           <p className="eyebrow">IMMUTABLE PACK</p>
@@ -221,7 +245,7 @@ export default async function RoomPage({ params }: { params: Promise<{ code: str
           ))}
         </section>
       ) : null}
-      {isOwner && room.versionId && room.status === 'lobby' && assignedRoleIds.size > 0
+      {isOwner && room.versionId && room.status === 'lobby' && packRoleCount > 0
         && assignedRoleIds.size === packRoleCount ? (
         <section className="members-section">
           <p className="eyebrow">START</p>
@@ -229,6 +253,40 @@ export default async function RoomPage({ params }: { params: Promise<{ code: str
           <form action={`/api/rooms/${room.code}/start`} method="post">
             <button type="submit">开始第一阶段</button>
           </form>
+        </section>
+      ) : null}
+      {isOwner && room.versionId && room.status === 'lobby' && packRoleCount > 0
+        && assignedRoleIds.size > 0 && assignedRoleIds.size < packRoleCount ? (
+        <section className="members-section force-start-section">
+          <p className="eyebrow">TEST OVERRIDE</p>
+          <h2>还差 {packRoleCount - assignedRoleIds.size} 个席位</h2>
+          <p className="empty-state">
+            正常开场需要所有席位锁定。测试时可以少人开场，但空缺角色不会分配给任何人，
+            开场后也不能补选；这只适合页面和权限功能测试，部分剧情流程可能无法继续。
+          </p>
+          <details className="force-start-confirmation">
+            <summary>查看少人开场选项</summary>
+            <div>
+              <strong>这是第二次确认</strong>
+              <p>只有当前已认领角色的玩家会获得对应内容；空缺角色内容仍保持不可见。</p>
+              <form action={`/api/rooms/${room.code}/start`} method="post">
+                <input type="hidden" name="forceStart" value="confirmed" />
+                <label>
+                  <input type="checkbox" name="confirmConsequences" value="yes" required />
+                  我知道开场后不能补选空缺角色，且部分剧情流程可能无法继续。
+                </label>
+                <button type="submit">确认少人开场</button>
+              </form>
+            </div>
+          </details>
+        </section>
+      ) : null}
+      {isOwner && room.versionId && room.status === 'lobby' && packRoleCount > 0
+        && assignedRoleIds.size === 0 ? (
+        <section className="members-section">
+          <p className="eyebrow">START</p>
+          <h2>至少先锁定一个席位</h2>
+          <p className="empty-state">你可以自己先选择一个角色，再使用少人开场进行测试。</p>
         </section>
       ) : null}
       {isOwner && canAdvance ? (

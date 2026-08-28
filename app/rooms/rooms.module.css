@@ -206,8 +206,12 @@
 .cardHeading h2 { margin: 0; }
 .cardHeading p { color: var(--gold); font-size: 9px; font-weight: 800; letter-spacing: .1em; }
 .cardHeading h2 { margin-top: 5px; font-family: "Songti SC", STSong, serif; font-size: 24px; line-height: 1.15; }
-.joinCard label { margin-top: 2px; color: var(--muted); font-size: 11px; font-weight: 650; }
+.joinCard label,
+.createCard label { margin-top: 2px; color: var(--muted); font-size: 11px; font-weight: 650; }
 .joinCard input { width: 100%; min-height: 52px; padding: 0 14px; border: 1px solid rgb(185 162 211 / 26%); border-radius: 9px; color: var(--light); background: rgb(8 5 12 / 32%); font: 800 18px/1 ui-monospace, "Cascadia Code", Consolas, monospace; letter-spacing: .14em; text-transform: uppercase; transition: border-color 160ms ease, background 160ms ease; }
+.createCard select { width: 100%; min-height: 48px; padding: 0 38px 0 13px; border: 1px solid rgb(185 162 211 / 26%); border-radius: 9px; color: var(--light); background: rgb(8 5 12 / 42%); font-size: 12px; }
+.createCard select:hover,
+.createCard select:focus { border-color: rgb(201 170 107 / 58%); }
 .joinCard input:hover,
 .joinCard input:focus { border-color: rgb(185 162 211 / 58%); background: rgb(8 5 12 / 48%); }
 .joinCard input::placeholder { color: #817489; letter-spacing: .06em; }

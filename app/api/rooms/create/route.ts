@@ -9,7 +9,10 @@ export async function POST(request: NextRequest) {
     origin = assertSameOrigin(request);
     const user = getRequestUser(request);
     if (!user) return NextResponse.redirect(new URL('/#account', origin), 303);
-    const code = createRoom(user.id);
+    const form = await request.formData();
+    const versionId = form.get('versionId');
+    if (typeof versionId !== 'string') throw new Error('PACK_SELECTION_REQUIRED');
+    const code = createRoom(user.id, versionId);
     if (!code) throw new Error('ROOM_CREATE_FAILED');
     return NextResponse.redirect(new URL(`/rooms/${code}`, origin), 303);
   } catch {

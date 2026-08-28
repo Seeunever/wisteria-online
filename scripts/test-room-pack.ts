@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-test('only the room owner can lock one frozen version into a lobby', async () => {
+test('room versions freeze atomically and incomplete starts require an explicit override', async () => {
   const temporaryRoot = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'wisteria-room-test-')));
   process.env.WISTERIA_DATA_DIR = temporaryRoot;
   let closeDatabase: (() => void) | undefined;
@@ -14,6 +14,8 @@ test('only the room owner can lock one frozen version into a lobby', async () =>
       advanceRoom,
       claimRole,
       createRoom,
+      getRoomForMember,
+      joinRoom,
       publishHeldClue,
       searchLocation,
       startRoom,
@@ -23,6 +25,11 @@ test('only the room owner can lock one frozen version into a lobby', async () =>
     ]);
     const database = getDatabase();
     closeDatabase = () => database.close();
+    const authorizationVersion = (roomCode: string) => (
+      database.prepare(
+        'SELECT authorization_version AS value FROM rooms WHERE code = ?',
+      ).get(roomCode) as { value: number }
+    ).value;
     const now = Date.now();
     database.prepare(`
       INSERT INTO users (id, username_key, display_name, password_salt, password_hash, created_at)
@@ -40,6 +47,23 @@ test('only the room owner can lock one frozen version into a lobby', async () =>
       'ver_aaaaaaaa', 'Synthetic pack', 'packs/ver_aaaaaaaa/bundle.internal.json',
       `sha256:${'a'.repeat(64)}`, now, now,
     );
+    database.prepare(`
+      INSERT INTO pack_versions
+        (id, public_label, payload_path, source_hash, state, created_at, frozen_at)
+      VALUES (?, ?, ?, ?, 'validated', ?, NULL)
+    `).run(
+      'ver_bbbbbbbb', 'Unfrozen synthetic pack', 'packs/ver_bbbbbbbb/bundle.internal.json',
+      `sha256:${'b'.repeat(64)}`, now,
+    );
+
+    assert.equal(createRoom('user-owner', 'ver_bbbbbbbb'), null);
+    assert.equal(createRoom('user-owner', 'ver_cccccccc'), null);
+    const selectedCode = createRoom('user-owner', 'ver_aaaaaaaa');
+    assert.notEqual(selectedCode, null);
+    const selectedRoom = database.prepare(
+      'SELECT version_id AS versionId FROM rooms WHERE code = ?',
+    ).get(selectedCode) as { versionId: string };
+    assert.equal(selectedRoom.versionId, 'ver_aaaaaaaa');
 
     const code = createRoom('user-owner');
     assert.notEqual(code, null);
@@ -57,9 +81,92 @@ test('only the room owner can lock one frozen version into a lobby', async () =>
     assert.equal(claimRole(code!, 'user-owner', 'role_bbbbbbbb'), false);
     assert.equal(startRoom(
       code!, 'user-owner', 'ver_aaaaaaaa', ['role_aaaaaaaa'], 'stage_aaaaaaaa', 1,
+      authorizationVersion(code!),
     ), true);
     assert.equal(startRoom(
-      code!, 'user-owner', 'ver_aaaaaaaa', ['role_aaaaaaaa'], 'stage_aaaaaaaa', 1,
+      code!, 'user-owner', 'ver_aaaaaaaa', ['role_aaaaaaaa'], 'stage_aaaaaaaa', 1, 3,
+    ), false);
+
+    const emptyForceCode = createRoom('user-owner', 'ver_aaaaaaaa');
+    assert.notEqual(emptyForceCode, null);
+    assert.equal(startRoom(
+      emptyForceCode!, 'user-owner', 'ver_aaaaaaaa',
+      ['role_aaaaaaaa', 'role_bbbbbbbb'], 'stage_aaaaaaaa', 1,
+      authorizationVersion(emptyForceCode!), true,
+    ), false);
+
+    const staleCode = createRoom('user-owner', 'ver_aaaaaaaa');
+    assert.notEqual(staleCode, null);
+    assert.equal(claimRole(staleCode!, 'user-owner', 'role_aaaaaaaa'), true);
+    const staleAuthorizationVersion = authorizationVersion(staleCode!);
+    assert.equal(joinRoom('user-other', staleCode!), true);
+    assert.equal(authorizationVersion(staleCode!), staleAuthorizationVersion + 1);
+    assert.equal(joinRoom('user-other', staleCode!), true);
+    assert.equal(authorizationVersion(staleCode!), staleAuthorizationVersion + 1);
+    assert.equal(startRoom(
+      staleCode!, 'user-owner', 'ver_aaaaaaaa',
+      ['role_aaaaaaaa'], 'stage_aaaaaaaa', 1, staleAuthorizationVersion,
+    ), false);
+    assert.equal(
+      (database.prepare('SELECT status FROM rooms WHERE code = ?').get(staleCode) as { status: string }).status,
+      'lobby',
+    );
+
+    const forceCode = createRoom('user-owner', 'ver_aaaaaaaa');
+    assert.notEqual(forceCode, null);
+    assert.equal(claimRole(forceCode!, 'user-owner', 'role_aaaaaaaa'), true);
+    assert.equal(startRoom(
+      forceCode!, 'user-other', 'ver_aaaaaaaa',
+      ['role_aaaaaaaa', 'role_bbbbbbbb'], 'stage_aaaaaaaa', 1,
+      authorizationVersion(forceCode!), true,
+    ), false);
+    assert.equal(startRoom(
+      forceCode!, 'user-owner', 'ver_aaaaaaaa',
+      ['role_aaaaaaaa', 'role_bbbbbbbb'], 'stage_aaaaaaaa', 1,
+      authorizationVersion(forceCode!),
+    ), false);
+    assert.equal(startRoom(
+      forceCode!, 'user-owner', 'ver_aaaaaaaa',
+      ['role_aaaaaaaa', 'role_bbbbbbbb'], 'stage_aaaaaaaa', 1,
+      authorizationVersion(forceCode!), true,
+    ), true);
+    const forceEvent = database.prepare(`
+      SELECT COUNT(*) AS count
+      FROM room_events
+      JOIN rooms ON rooms.id = room_events.room_id
+      WHERE rooms.code = ? AND room_events.event_type = 'room_force_started'
+    `).get(forceCode) as { count: number };
+    assert.equal(forceEvent.count, 1);
+    assert.equal(getRoomForMember(forceCode!, 'user-owner')?.incompleteStart, 1);
+
+    const departedCode = createRoom('user-owner', 'ver_aaaaaaaa');
+    assert.notEqual(departedCode, null);
+    assert.equal(joinRoom('user-other', departedCode!), true);
+    assert.equal(claimRole(departedCode!, 'user-owner', 'role_aaaaaaaa'), true);
+    assert.equal(claimRole(departedCode!, 'user-other', 'role_bbbbbbbb'), true);
+    database.prepare(`
+      UPDATE memberships SET left_at = ?
+      WHERE room_id = (SELECT id FROM rooms WHERE code = ?) AND user_id = ?
+    `).run(Date.now(), departedCode, 'user-other');
+    assert.equal(startRoom(
+      departedCode!, 'user-owner', 'ver_aaaaaaaa',
+      ['role_aaaaaaaa', 'role_bbbbbbbb'], 'stage_aaaaaaaa', 1,
+      authorizationVersion(departedCode!),
+    ), false);
+    assert.equal(startRoom(
+      departedCode!, 'user-owner', 'ver_aaaaaaaa',
+      ['role_aaaaaaaa', 'role_bbbbbbbb'], 'stage_aaaaaaaa', 1,
+      authorizationVersion(departedCode!), true,
+    ), true);
+    assert.equal(joinRoom('user-other', departedCode!), false);
+
+    const tamperedCode = createRoom('user-owner', 'ver_aaaaaaaa');
+    assert.notEqual(tamperedCode, null);
+    assert.equal(claimRole(tamperedCode!, 'user-owner', 'role_cccccccc'), true);
+    assert.equal(startRoom(
+      tamperedCode!, 'user-owner', 'ver_aaaaaaaa',
+      ['role_aaaaaaaa', 'role_bbbbbbbb'], 'stage_aaaaaaaa', 1,
+      authorizationVersion(tamperedCode!), true,
     ), false);
     assert.equal(searchLocation({
       code: code!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',

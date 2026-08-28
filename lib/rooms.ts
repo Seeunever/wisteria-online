@@ -8,7 +8,8 @@ function newRoomCode() {
   return Array.from(bytes, (value) => ROOM_ALPHABET[value % ROOM_ALPHABET.length]).join('');
 }
 
-export function createRoom(ownerUserId: string) {
+export function createRoom(ownerUserId: string, versionId?: string) {
+  if (versionId !== undefined && !/^ver_[0-9a-f]{8,64}$/.test(versionId)) return null;
   const database = getDatabase();
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const id = randomUUID();
@@ -16,10 +17,23 @@ export function createRoom(ownerUserId: string) {
     const now = Date.now();
     try {
       database.exec('BEGIN IMMEDIATE');
-      database.prepare(`
-        INSERT INTO rooms (id, code, owner_user_id, status, created_at)
-        VALUES (?, ?, ?, 'lobby', ?)
-      `).run(id, code, ownerUserId, now);
+      if (versionId) {
+        const inserted = database.prepare(`
+          INSERT INTO rooms (id, code, owner_user_id, version_id, status, created_at)
+          SELECT ?, ?, ?, id, 'lobby', ?
+          FROM pack_versions
+          WHERE id = ? AND state = 'frozen'
+        `).run(id, code, ownerUserId, now, versionId);
+        if (inserted.changes !== 1) {
+          database.exec('ROLLBACK');
+          return null;
+        }
+      } else {
+        database.prepare(`
+          INSERT INTO rooms (id, code, owner_user_id, status, created_at)
+          VALUES (?, ?, ?, 'lobby', ?)
+        `).run(id, code, ownerUserId, now);
+      }
       database.prepare(`
         INSERT INTO memberships (id, room_id, user_id, joined_at)
         VALUES (?, ?, ?, ?)
@@ -36,18 +50,31 @@ export function createRoom(ownerUserId: string) {
 export function joinRoom(userId: string, rawCode: string) {
   const code = rawCode.normalize('NFKC').trim().toUpperCase();
   if (!/^[23456789A-HJ-NP-Z]{6}$/.test(code)) return false;
-  const room = getDatabase().prepare(
-    "SELECT id FROM rooms WHERE code = ? AND status != 'completed'",
-  ).get(code) as { id: string } | undefined;
-  if (!room) return false;
+  const database = getDatabase();
   try {
-    getDatabase().prepare(`
+    database.exec('BEGIN IMMEDIATE');
+    const room = database.prepare(
+      "SELECT id FROM rooms WHERE code = ? AND status = 'lobby'",
+    ).get(code) as { id: string } | undefined;
+    if (!room) {
+      database.exec('ROLLBACK');
+      return false;
+    }
+    const joined = database.prepare(`
       INSERT INTO memberships (id, room_id, user_id, joined_at)
       VALUES (?, ?, ?, ?)
       ON CONFLICT(room_id, user_id) DO UPDATE SET left_at = NULL
+      WHERE memberships.left_at IS NOT NULL
     `).run(randomUUID(), room.id, userId, Date.now());
+    if (joined.changes === 1) {
+      database.prepare(`
+        UPDATE rooms SET authorization_version = authorization_version + 1 WHERE id = ?
+      `).run(room.id);
+    }
+    database.exec('COMMIT');
     return true;
   } catch {
+    try { database.exec('ROLLBACK'); } catch { /* transaction did not start */ }
     return false;
   }
 }
@@ -55,10 +82,12 @@ export function joinRoom(userId: string, rawCode: string) {
 export function listRooms(userId: string) {
   return getDatabase().prepare(`
     SELECT rooms.code, rooms.status, rooms.created_at AS createdAt,
+           pack_versions.public_label AS packLabel,
            rooms.owner_user_id = ? AS isOwner,
            COUNT(active.id) AS memberCount
     FROM memberships mine
     JOIN rooms ON rooms.id = mine.room_id
+    LEFT JOIN pack_versions ON pack_versions.id = rooms.version_id
     LEFT JOIN memberships active ON active.room_id = rooms.id AND active.left_at IS NULL
     WHERE mine.user_id = ? AND mine.left_at IS NULL
     GROUP BY rooms.id
@@ -67,6 +96,7 @@ export function listRooms(userId: string) {
     code: string;
     status: string;
     createdAt: number;
+    packLabel: string | null;
     isOwner: number;
     memberCount: number;
   }>;
@@ -77,9 +107,16 @@ export function getRoomForMember(codeInput: string, userId: string) {
   const room = getDatabase().prepare(`
     SELECT rooms.id, rooms.code, rooms.status, rooms.owner_user_id AS ownerUserId,
            rooms.version_id AS versionId, rooms.authorization_version AS authorizationVersion,
+           pack_versions.public_label AS packLabel,
+           EXISTS (
+             SELECT 1 FROM room_events
+             WHERE room_events.room_id = rooms.id
+               AND room_events.event_type = 'room_force_started'
+           ) AS incompleteStart,
            memberships.id AS membershipId, role_assignments.role_id AS assignedRoleId
     FROM rooms
     JOIN memberships ON memberships.room_id = rooms.id
+    LEFT JOIN pack_versions ON pack_versions.id = rooms.version_id
     LEFT JOIN role_assignments
       ON role_assignments.room_id = rooms.id
       AND role_assignments.membership_id = memberships.id
@@ -90,6 +127,8 @@ export function getRoomForMember(codeInput: string, userId: string) {
     status: string;
     ownerUserId: string;
     versionId: string | null;
+    packLabel: string | null;
+    incompleteStart: number;
     authorizationVersion: number;
     membershipId: string;
     assignedRoleId: string | null;
@@ -215,6 +254,8 @@ export function startRoom(
   requiredRoleIds: string[],
   firstStageId: string,
   firstStageSequence: number,
+  expectedAuthorizationVersion: number,
+  allowIncompleteRoles = false,
 ) {
   const code = codeInput.normalize('NFKC').trim().toUpperCase();
   if (
@@ -223,32 +264,63 @@ export function startRoom(
     || !/^stage_[0-9a-f]{8,64}$/.test(firstStageId)
     || !Number.isInteger(firstStageSequence)
     || firstStageSequence !== 1
+    || !Number.isInteger(expectedAuthorizationVersion)
+    || expectedAuthorizationVersion < 1
     || requiredRoleIds.length === 0
     || requiredRoleIds.some((id) => !/^role_[0-9a-f]{8,64}$/.test(id))
     || new Set(requiredRoleIds).size !== requiredRoleIds.length
+    || typeof allowIncompleteRoles !== 'boolean'
   ) return false;
 
   const database = getDatabase();
   try {
     database.exec('BEGIN IMMEDIATE');
     const room = database.prepare(`
-      SELECT id FROM rooms
-      WHERE code = ? AND owner_user_id = ? AND version_id = ? AND status = 'lobby'
-    `).get(code, ownerUserId, versionId) as { id: string } | undefined;
+      SELECT rooms.id, memberships.id AS actorMembershipId
+      FROM rooms
+      JOIN memberships ON memberships.room_id = rooms.id
+        AND memberships.user_id = rooms.owner_user_id
+        AND memberships.left_at IS NULL
+      WHERE rooms.code = ? AND rooms.owner_user_id = ?
+        AND rooms.version_id = ? AND rooms.status = 'lobby'
+        AND rooms.authorization_version = ?
+    `).get(code, ownerUserId, versionId, expectedAuthorizationVersion) as {
+      id: string;
+      actorMembershipId: string;
+    } | undefined;
     if (!room) {
       database.exec('ROLLBACK');
       return false;
     }
     const assigned = database.prepare(`
-      SELECT role_id AS roleId FROM role_assignments WHERE room_id = ? ORDER BY role_id
+      SELECT role_assignments.role_id AS roleId
+      FROM role_assignments
+      JOIN memberships
+        ON memberships.id = role_assignments.membership_id
+        AND memberships.room_id = role_assignments.room_id
+        AND memberships.left_at IS NULL
+      WHERE role_assignments.room_id = ?
+      ORDER BY role_assignments.role_id
     `).all(room.id) as Array<{ roleId: string }>;
     const actual = assigned.map((item) => item.roleId).sort();
     const expected = [...requiredRoleIds].sort();
-    if (actual.length !== expected.length || actual.some((roleId, index) => roleId !== expected[index])) {
+    const expectedSet = new Set(expected);
+    const allRolesAssigned = actual.length === expected.length
+      && actual.every((roleId, index) => roleId === expected[index]);
+    const validAssignedSubset = actual.length > 0
+      && actual.every((roleId) => expectedSet.has(roleId));
+    if (!validAssignedSubset || (!allRolesAssigned && !allowIncompleteRoles)) {
       database.exec('ROLLBACK');
       return false;
     }
     const now = Date.now();
+    if (!allRolesAssigned) {
+      database.prepare(`
+        INSERT INTO room_events
+          (id, room_id, actor_membership_id, event_type, object_id, event_payload, created_at)
+        VALUES (?, ?, ?, 'room_force_started', NULL, '{}', ?)
+      `).run(randomUUID(), room.id, room.actorMembershipId, now);
+    }
     database.prepare(`
       INSERT INTO room_stages (room_id, stage_id, sequence, entered_at)
       VALUES (?, ?, ?, ?)

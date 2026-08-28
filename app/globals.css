@@ -257,6 +257,16 @@ footer p { color: #7e7066; font-size: .68rem; }
 .deal-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
 .deal-controls form { margin: 0; }
 .members-section article p { white-space: pre-wrap; line-height: 1.8; }
+.room-alert { margin: 1.5rem 0 0; padding: .9rem 1rem; border: 1px solid rgb(215 154 176 / 40%); border-radius: .7rem; color: #f0c7d5; background: rgb(116 47 72 / 18%); font-size: .8rem; line-height: 1.65; }
+.force-start-section > .empty-state { display: block; margin-top: 1rem; padding: 1rem 1.1rem; border: 1px solid rgb(201 170 107 / 28%); border-radius: .7rem; background: rgb(201 170 107 / 5%); line-height: 1.75; }
+.force-start-confirmation { margin-top: 1rem; border: 1px solid rgb(215 154 176 / 34%); border-radius: .75rem; background: rgb(116 47 72 / 12%); }
+.force-start-confirmation summary { padding: .9rem 1rem; color: #efcad6; cursor: pointer; font-weight: 750; }
+.force-start-confirmation > div { padding: 0 1rem 1rem; border-top: 1px solid rgb(215 154 176 / 22%); }
+.force-start-confirmation > div > strong { display: block; margin-top: 1rem; }
+.force-start-confirmation > div > p { margin: .45rem 0 0; color: var(--muted); font-size: .78rem; line-height: 1.7; }
+.force-start-confirmation form { display: grid; align-items: start; }
+.force-start-confirmation label { grid-template-columns: auto minmax(0, 1fr); align-items: start; color: #d8cbdc; line-height: 1.65; }
+.force-start-confirmation input[type='checkbox'] { width: 1rem; height: 1rem; margin-top: .15rem; accent-color: var(--gold); }
 
 @media (max-width: 900px) {
   .site-header { grid-template-columns: 1fr auto; }

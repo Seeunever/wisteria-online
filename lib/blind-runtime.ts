@@ -164,6 +164,21 @@ export function evaluateCondition(
   return evaluateConditionState(condition, context, depth) === true;
 }
 
+/**
+ * Evaluate a stage gate while optionally simulating attendance. This returns only
+ * a boolean so the simulated role set cannot be reused for protected projections.
+ */
+export function evaluateStageFlowCondition(
+  condition: BlindCondition,
+  context: AuthorizationContext,
+  simulatedAssignedRoleIds?: ReadonlySet<string>,
+) {
+  return evaluateCondition(
+    condition,
+    simulatedAssignedRoleIds ? { ...context, assignedRoleIds: simulatedAssignedRoleIds } : context,
+  );
+}
+
 function evaluateConditionState(
   condition: BlindCondition,
   context: AuthorizationContext,

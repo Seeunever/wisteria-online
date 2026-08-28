@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUser } from '@/lib/auth';
-import { evaluateCondition, type AuthorizationContext } from '@/lib/blind-runtime';
+import { evaluateStageFlowCondition, type AuthorizationContext } from '@/lib/blind-runtime';
 import { loadFrozenBundle } from '@/lib/packs';
 import { getRoomForMember, startRoom } from '@/lib/rooms';
 import { assertSameOrigin } from '@/lib/security';
@@ -19,6 +19,9 @@ export async function POST(
     if (!room?.versionId || room.ownerUserId !== user.id || room.status !== 'lobby') {
       throw new Error('ROOM_START_REJECTED');
     }
+    const form = await request.formData();
+    const forceStart = form.get('forceStart') === 'confirmed'
+      && form.get('confirmConsequences') === 'yes';
     const bundle = loadFrozenBundle(room.versionId);
     const roleIds = Object.keys(bundle.roles);
     const assignedRoleIds = new Set(
@@ -37,11 +40,25 @@ export async function POST(
       hostReleaseIds: new Set(),
       sessionCompleted: false,
     };
+    const allRolesAssigned = assignedRoleIds.size === roleIds.length;
+    const assignedRolesAreValid = assignedRoleIds.size > 0
+      && [...assignedRoleIds].every((roleId) => roleIds.includes(roleId));
+    const simulatedFlowRoles = forceStart && !allRolesAssigned ? new Set(roleIds) : undefined;
     if (
       !firstStage
-      || assignedRoleIds.size !== roleIds.length
-      || !evaluateCondition(firstStage.enterWhen, context)
-      || !startRoom(code, user.id, room.versionId, roleIds, firstStage.stageId, firstStage.sequence)
+      || !assignedRolesAreValid
+      || (!allRolesAssigned && !forceStart)
+      || !evaluateStageFlowCondition(firstStage.enterWhen, context, simulatedFlowRoles)
+      || !startRoom(
+        code,
+        user.id,
+        room.versionId,
+        roleIds,
+        firstStage.stageId,
+        firstStage.sequence,
+        room.authorizationVersion,
+        forceStart,
+      )
     ) throw new Error('ROOM_START_REJECTED');
     return NextResponse.redirect(new URL(`/rooms/${code}`, origin), 303);
   } catch {

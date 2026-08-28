@@ -1,4 +1,5 @@
 import { getCurrentUser } from '@/lib/auth';
+import { listFrozenPackVersions } from '@/lib/packs';
 import { listRooms } from '@/lib/rooms';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -41,7 +42,7 @@ function RoomCard({ room }: { room: RoomSummary }) {
       </div>
       <div>
         <strong>{status.label}</strong>
-        <p>{status.detail}</p>
+        <p>{room.packLabel ?? status.detail}</p>
       </div>
       <footer>
         <span>{room.memberCount} 人</span>
@@ -57,6 +58,7 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
   if (!user) redirect('/#account');
 
   const rooms = listRooms(user.id);
+  const packs = listFrozenPackVersions();
   const [recentRoom, ...olderRooms] = rooms;
   const runningCount = rooms.filter((room) => room.status === 'running').length;
   const ownedCount = rooms.filter((room) => Boolean(room.isOwner)).length;
@@ -157,8 +159,29 @@ export default async function RoomsPage({ searchParams }: RoomsPageProps) {
               <span className={styles.actionNumber}>02</span>
               <div><p>我是发起人</p><h2>创建新房间</h2></div>
             </div>
-            <p className={styles.cardDescription}>先建立空房间，再在房间内选择已经校验并冻结的剧本版本。</p>
-            <button type="submit">创建并进入 <span aria-hidden="true">＋</span></button>
+            {packs.length ? (
+              <>
+                <label htmlFor="create-pack">选择剧本</label>
+                <select
+                  id="create-pack"
+                  name="versionId"
+                  required
+                  defaultValue={packs.length === 1 ? packs[0].versionId : ''}
+                  aria-describedby="create-pack-hint"
+                >
+                  {packs.length > 1 ? <option value="" disabled>请选择一个剧本</option> : null}
+                  {packs.map((pack) => (
+                    <option key={pack.versionId} value={pack.versionId}>{pack.publicLabel}</option>
+                  ))}
+                </select>
+                <p className={styles.cardDescription} id="create-pack-hint">
+                  创建时即锁定这个冻结版本，后续更新不会改变已经开的房间。
+                </p>
+                <button type="submit">创建并进入 <span aria-hidden="true">＋</span></button>
+              </>
+            ) : (
+              <p className={styles.cardDescription}>目前没有可选的已冻结剧本，暂时不能创建房间。</p>
+            )}
           </form>
 
           <div className={styles.versionNote}>

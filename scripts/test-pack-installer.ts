@@ -4,18 +4,15 @@ import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
   renameSync,
   rmdirSync,
-  rmSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
@@ -32,6 +29,10 @@ import {
   syntheticBundle,
   syntheticPolicyDraft,
 } from './runtime-policy-test-fixture.ts';
+import {
+  createTestTempDirectory,
+  removeTestTempDirectory,
+} from './test-temp-directory.ts';
 
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
@@ -155,18 +156,13 @@ function runtimePolicyAttestation({
 }
 
 function safeCleanup(root: string, prefix: string) {
-  const resolved = realpathSync(root);
-  const temporaryRoot = `${realpathSync(os.tmpdir())}${path.sep}`;
-  if (!resolved.startsWith(temporaryRoot) || !path.basename(resolved).startsWith(prefix)) {
-    throw new Error('UNSAFE_TEST_CLEANUP_TARGET');
-  }
-  rmSync(resolved, { recursive: true, force: false });
+  removeTestTempDirectory(root, prefix);
 }
 
 test('installer atomically registers and serves an attested sidecar and render manifest', async (t) => {
-  const runRoot = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'wisteria-install-run-')));
-  const dataRoot = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'wisteria-install-data-')));
-  const auxiliaryRoot = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'wisteria-install-aux-')));
+  const runRoot = createTestTempDirectory('wisteria-install-run-', true);
+  const dataRoot = createTestTempDirectory('wisteria-install-data-');
+  const auxiliaryRoot = createTestTempDirectory('wisteria-install-aux-');
   try {
     const vault = path.join(runRoot, 'vault');
     const safe = path.join(runRoot, 'safe');

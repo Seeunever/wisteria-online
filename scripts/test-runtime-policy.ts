@@ -4,14 +4,11 @@ import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import {
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   realpathSync,
-  rmSync,
   rmdirSync,
   writeFileSync,
 } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
@@ -31,6 +28,10 @@ import {
   syntheticBundle,
   syntheticPolicyDraft,
 } from './runtime-policy-test-fixture.ts';
+import {
+  createTestTempDirectory,
+  removeTestTempDirectory,
+} from './test-temp-directory.ts';
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -135,12 +136,7 @@ function assertPolicyError(code: RuntimePolicyError['code'], action: () => unkno
 }
 
 function cleanup(root: string, prefix: string) {
-  const resolved = realpathSync(root);
-  const expectedPrefix = `${realpathSync(os.tmpdir())}${path.sep}`;
-  if (!resolved.startsWith(expectedPrefix) || !path.basename(resolved).startsWith(prefix)) {
-    throw new Error('UNSAFE_TEST_CLEANUP_TARGET');
-  }
-  rmSync(resolved, { recursive: true, force: false });
+  removeTestTempDirectory(root, prefix);
 }
 
 test('runtime policy is normalized without mutation and has a deterministic binding hash', () => {
@@ -266,8 +262,8 @@ test('canonical, sidecar, and explicitly legacy profiles resolve without silent 
 });
 
 test('project-local validator emits only a private, scope-limited deterministic attestation', () => {
-  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'wisteria-policy-cli-')));
-  const verifierRoot = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'wisteria-policy-verifier-')));
+  const root = createTestTempDirectory('wisteria-policy-cli-', true);
+  const verifierRoot = createTestTempDirectory('wisteria-policy-verifier-');
   try {
     const vault = path.join(root, 'vault');
     const safe = path.join(root, 'safe');
@@ -485,7 +481,7 @@ test('project-local validator emits only a private, scope-limited deterministic 
 });
 
 test('database migration backfills only versions that predate the runtime-profile registry', async () => {
-  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'wisteria-policy-db-')));
+  const root = createTestTempDirectory('wisteria-policy-db-');
   process.env.WISTERIA_DATA_DIR = root;
   let applicationDatabase: DatabaseSync | undefined;
   try {

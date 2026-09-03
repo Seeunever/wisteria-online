@@ -6,6 +6,7 @@ After=wisteria.service
 Type=oneshot
 User=wisteria
 Group=wisteria
+UMask=0077
 Environment=WISTERIA_DATA_DIR=/var/lib/wisteria
 Environment=WISTERIA_BACKUP_DIR=/var/backups/wisteria
 ExecStart=/usr/bin/node /opt/wisteria/current/scripts/backup-db.mjs
@@ -14,3 +15,4 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/backups/wisteria
+ReadWritePaths=/var/lib/wisteria

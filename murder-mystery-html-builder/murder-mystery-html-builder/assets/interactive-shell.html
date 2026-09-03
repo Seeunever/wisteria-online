@@ -8,6 +8,126 @@
   <style>
     :root{--bg:#0d110f;--panel:#19211b;--panel2:#273029;--ink:#f5f0e5;--muted:#b9b6ad;--gold:#d8ba78;--line:#465048;--danger:#c47765;--ok:#8db69a}*{box-sizing:border-box}html{background:var(--bg)}body{margin:0;min-height:100vh;color:var(--ink);background:radial-gradient(circle at 15% 0,#303a31 0,#151a16 30rem,var(--bg) 76rem);font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif}button,a,textarea{font:inherit}.storage-warning{padding:.65rem 1rem;color:#24170f;background:#efc99e;text-align:center;font-size:.84rem}.storage-warning[hidden]{display:none}.header{position:sticky;top:0;z-index:10;border-bottom:1px solid #ffffff18;background:#101511ef;backdrop-filter:blur(14px)}.bar,.nav{display:flex;align-items:center;gap:.55rem;width:min(100% - 1rem,76rem);margin:auto}.bar{justify-content:space-between;padding:.7rem 0}.brand{color:var(--ink);text-decoration:none;font:500 1.4rem serif}.status{color:var(--muted);font-size:.78rem;white-space:nowrap}.nav{overflow-x:auto;padding:0 0 .7rem;scrollbar-width:none}.nav:empty{display:none}.nav a,.pill{flex:0 0 auto;padding:.62rem .85rem;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:#202820;text-decoration:none}.nav a.active,.pill.active{border-color:var(--gold);color:#17140e;background:var(--gold);font-weight:700}.shell{width:min(100% - 1rem,76rem);margin:auto;padding:clamp(1.3rem,4vw,3rem) 0 5rem}.hero{margin-bottom:1.3rem}.eyebrow{margin:0 0 .45rem;color:var(--gold);font-size:.76rem;letter-spacing:.16em}.hero h1{margin:0;font:500 clamp(2rem,7vw,4.3rem)/1.12 serif}.hero p{max-width:55rem;color:var(--muted);line-height:1.75}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr));gap:1rem}.panel{padding:1rem;border:1px solid var(--line);border-radius:1rem;background:#19201be8;box-shadow:0 1rem 2.8rem #0005}.panel h2{margin:.1rem 0 .5rem;color:#f3e6c7;font-size:1.08rem}.panel p{color:var(--muted);line-height:1.65}.panel.locked{opacity:.72}.badge{display:inline-block;margin-bottom:.55rem;padding:.25rem .55rem;border-radius:999px;color:#17140e;background:var(--gold);font-size:.72rem;font-weight:700}.action{display:flex;align-items:center;justify-content:space-between;gap:.7rem;width:100%;margin:.55rem 0 0;padding:.8rem .9rem;border:1px solid #566157;border-radius:.72rem;color:var(--ink);background:#263027;text-decoration:none;text-align:left;cursor:pointer}.action::after{content:"›";color:var(--gold);font-size:1.3rem}.action:hover,.action:focus-visible,.pill:hover,.pill:focus-visible{border-color:var(--gold);outline:none}.cover-button,.page-button{display:block;width:100%;padding:0;border:1px solid var(--line);border-radius:.8rem;overflow:hidden;background:#111;cursor:zoom-in}.cover-button img,.page-button img{display:block;width:100%;height:auto}.tabs{display:flex;gap:.55rem;overflow-x:auto;margin:0 0 1rem}.tabs .locked::after{content:" 🔒"}.pages{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,25rem),1fr));gap:1rem;align-items:start}.page{margin:0;text-align:center}.page figcaption{margin-top:.45rem;color:var(--muted);font-size:.75rem}.notice{margin:1rem 0;padding:.9rem 1rem;border-left:3px solid var(--gold);border-radius:.3rem;background:#171d19;color:var(--muted);line-height:1.7}.next{width:min(100%,42rem);margin:1.3rem auto 0;padding:1rem;border:1px solid var(--gold);border-radius:1rem;background:#201f18;text-align:center}.flow{display:grid;gap:.8rem}.step{display:grid;grid-template-columns:2.7rem 1fr;gap:.9rem;padding:1rem;border:1px solid var(--line);border-radius:1rem;background:#19201b}.step-number{display:grid;place-items:center;width:2.5rem;height:2.5rem;border:1px solid var(--gold);border-radius:50%;color:var(--gold);font-weight:700}.step h2{margin:0}.step p{color:var(--muted);line-height:1.6}.card-reader{width:min(100%,36rem);margin:auto;text-align:center}.reveal{margin:1rem auto 0;padding:.85rem 1.15rem;border:1px solid #e4c987;border-radius:999px;color:#16130d;background:linear-gradient(#ead8a6,#c8a55f);font-weight:700;cursor:pointer}.settings{display:grid;gap:1rem}.settings textarea{width:100%;min-height:7rem;padding:.8rem;border:1px solid var(--line);border-radius:.7rem;color:var(--ink);background:#101511;resize:vertical}.row{display:flex;flex-wrap:wrap;gap:.6rem}.small{padding:.7rem .9rem;border:1px solid var(--line);border-radius:.7rem;color:var(--ink);background:#283129;cursor:pointer}.small.danger{border-color:#8d564b;color:#f1b6a8}.back{display:inline-block;margin-bottom:1rem;color:var(--gold);text-decoration:none}.zoom{position:fixed;inset:0;z-index:30;display:none;align-items:center;justify-content:center;padding:.7rem;background:#040605f4}.zoom.open{display:flex}.zoom img{max-width:100%;max-height:calc(100vh - 1.4rem);object-fit:contain}.zoom button{position:fixed;top:.7rem;right:.7rem;width:3rem;height:3rem;border:1px solid #ffffff66;border-radius:50%;color:white;background:#141815e8;font-size:1.5rem}dialog{width:min(100% - 1rem,30rem);padding:0;border:1px solid #5d675e;border-radius:1rem;color:var(--ink);background:#18201b;box-shadow:0 2rem 7rem #000}dialog::backdrop{background:#050706d9}.dialog-body{padding:1.25rem}.dialog-body h2{margin:0 0 .65rem}.dialog-body p{color:var(--muted);line-height:1.65}.dialog-actions{display:flex;justify-content:flex-end;gap:.6rem}.dialog-actions button{padding:.72rem 1rem;border:1px solid var(--line);border-radius:.7rem;color:var(--ink);background:#29322a}.dialog-actions .confirm{color:#16130d;background:var(--gold);border-color:var(--gold)}.toast{position:fixed;left:50%;bottom:1rem;z-index:40;transform:translateX(-50%) translateY(2rem);padding:.75rem 1rem;border:1px solid var(--line);border-radius:999px;background:#202820;opacity:0;pointer-events:none;transition:.2s}.toast.show{transform:translateX(-50%) translateY(0);opacity:1}@media(max-width:560px){.shell,.bar,.nav{width:min(100% - .8rem,76rem)}.hero h1{font-size:2.35rem}.panel{padding:.9rem}.pages{gap:.8rem}.dialog-actions{display:grid;grid-template-columns:1fr 1fr}.dialog-actions button{width:100%}}
   </style>
+  <style>
+    :root {
+      --bg: #120d1b;
+      --panel: #1d1427;
+      --panel2: #2a1a38;
+      --ink: #f5eff8;
+      --muted: #bbafc3;
+      --gold: #c9aa6b;
+      --line: rgb(185 162 211 / 20%);
+      --wine: #743348;
+    }
+    html { background: var(--bg); scroll-behavior: smooth; }
+    body {
+      background:
+        radial-gradient(circle at 12% 2%, rgb(121 85 163 / 25%), transparent 29rem),
+        radial-gradient(circle at 90% 24%, rgb(53 26 71 / 28%), transparent 34rem),
+        var(--bg);
+      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    }
+    button:focus-visible, a:focus-visible, textarea:focus-visible {
+      outline: 3px solid #d7b9f3;
+      outline-offset: 3px;
+    }
+    .header {
+      border-color: var(--line);
+      background: rgb(18 13 27 / 90%);
+      backdrop-filter: blur(18px);
+    }
+    .bar, .nav, .shell { width: min(100% - 2rem, 78rem); }
+    .bar { min-height: 68px; padding: .7rem 0; }
+    .brand {
+      font: 600 1.45rem/1 "STKaiti", "KaiTi", "Songti SC", serif;
+      letter-spacing: .14em;
+    }
+    .status { color: var(--muted); }
+    .nav a, .pill {
+      border-color: var(--line);
+      color: var(--muted);
+      background: rgb(255 255 255 / 3%);
+    }
+    .nav a.active, .pill.active {
+      border-color: #b8814a;
+      color: #1d1510;
+      background: linear-gradient(135deg, #e5c88f, #b78147);
+    }
+    .shell { padding: clamp(2.4rem, 6vw, 5rem) 0 6rem; }
+    .hero { margin-bottom: clamp(1.6rem, 4vw, 2.8rem); }
+    .eyebrow { margin-bottom: .75rem; font-weight: 800; }
+    .hero h1 {
+      font: 600 clamp(2.5rem, 7vw, 5rem)/1.04 "STKaiti", "KaiTi", "Songti SC", serif;
+      letter-spacing: -.035em;
+    }
+    .hero p { max-width: 48rem; line-height: 1.85; }
+    .grid { gap: 1rem; }
+    .role-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .panel {
+      border-color: var(--line);
+      background: linear-gradient(145deg, rgb(255 255 255 / 5%), transparent 48%), rgb(27 18 37 / 88%);
+      box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 25%);
+    }
+    .panel h2 {
+      color: var(--ink);
+      font-family: "STKaiti", "KaiTi", "Songti SC", serif;
+      font-size: 1.35rem;
+    }
+    .panel.current { border-color: rgb(201 170 107 / 68%); box-shadow: 0 0 0 1px rgb(201 170 107 / 20%), 0 1.5rem 4rem rgb(0 0 0 / 30%); }
+    .role-card { display: flex; flex-direction: column; align-items: stretch; min-width: 0; padding: .85rem; }
+    .role-card .badge { align-self: flex-start; }
+    .role-cover-frame { margin: 0 0 .95rem; }
+    .role-card .cover-button {
+      aspect-ratio: 2480 / 3508;
+      border-color: rgb(201 170 107 / 24%);
+      border-radius: .65rem;
+      background: #e8e2ee;
+    }
+    .role-card .cover-button img { width: 100%; height: 100%; object-fit: contain; }
+    .role-card h2 { margin: .1rem .1rem .75rem; }
+    .badge { color: #1d1510; background: linear-gradient(135deg, #e5c88f, #b78147); }
+    .action, .small {
+      border-color: rgb(185 162 211 / 25%);
+      color: var(--ink);
+      background: rgb(255 255 255 / 4%);
+    }
+    .role-card > .action, .next .action, .reveal {
+      border-color: #b8814a;
+      color: #1d1510;
+      background: linear-gradient(135deg, #e5c88f, #b78147);
+      font-weight: 800;
+    }
+    .role-card > .action { margin-top: auto; }
+    .role-card > .action::after, .next .action::after { color: #1d1510; }
+    .action:hover, .action:focus-visible, .pill:hover, .pill:focus-visible { border-color: var(--gold); }
+    .pages { grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr)); }
+    .page-button { border-color: var(--line); background: #eee8df; }
+    .notice, .step, .next, dialog, .settings textarea {
+      border-color: var(--line);
+      background: rgb(27 18 37 / 92%);
+    }
+    .step-number { border-color: var(--gold); color: var(--gold); }
+    .zoom { background: rgb(7 4 10 / 96%); }
+    .toast { background: #2a1a38; }
+    .small.danger { border-color: rgb(215 154 176 / 48%); color: #f0c7d5; background: rgb(116 47 72 / 18%); }
+    @media (max-width: 900px) {
+      .role-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 560px) {
+      .bar, .nav, .shell { width: min(100% - 1rem, 78rem); }
+      .bar { min-height: 62px; }
+      .brand { font-size: 1.2rem; }
+      .status { max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+      .shell { padding-top: 2.1rem; }
+      .hero h1 { font-size: clamp(2.35rem, 13vw, 3.8rem); }
+      .role-grid { grid-template-columns: minmax(0, 1fr); }
+      .role-card { padding: .75rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .toast { transition: none; }
+    }
+  </style>
 </head>
 <body>
   <div class="storage-warning" data-storage-warning hidden>当前浏览器无法永久保存离线进度。请在设置中导出进度码作为备份。</div>
@@ -16,31 +136,31 @@
     <nav class="nav" aria-label="主导航" data-main-nav></nav>
   </header>
   <main class="shell" data-view-root></main>
-  <dialog data-confirm-dialog><form method="dialog" class="dialog-body"><h2 data-dialog-title></h2><p data-dialog-message></p><div class="dialog-actions"><button value="cancel">取消</button><button class="confirm" value="confirm" data-dialog-confirm>确认</button></div></form></dialog>
-  <div class="zoom" data-zoom><button aria-label="关闭放大">×</button><img alt="放大页面"></div>
+  <dialog aria-labelledby="confirm-dialog-title" data-confirm-dialog><form method="dialog" class="dialog-body"><h2 id="confirm-dialog-title" data-dialog-title></h2><p data-dialog-message></p><div class="dialog-actions"><button value="cancel">取消</button><button class="confirm" value="confirm" data-dialog-confirm>确认</button></div></form></dialog>
+  <div class="zoom" role="dialog" aria-modal="true" aria-label="页面放大预览" data-zoom><button aria-label="关闭放大">×</button><img alt="放大页面"></div>
   <div class="toast" role="status" aria-live="polite" data-toast></div>
   <script id="content-data" type="application/json">__CONTENT_DATA__</script>
   <script>__PROGRESS_SCRIPT__</script>
   <script>
   (()=>{'use strict';
-    const data=JSON.parse(document.querySelector('#content-data').textContent),logic=ProgressEngine,view=document.querySelector('[data-view-root]'),nav=document.querySelector('[data-main-nav]'),roleStatus=document.querySelector('[data-role-status]'),warning=document.querySelector('[data-storage-warning]'),dialog=document.querySelector('[data-confirm-dialog]'),zoom=document.querySelector('[data-zoom]'),toast=document.querySelector('[data-toast]');document.querySelector('[data-brand]').textContent=data.title;
+    const data=JSON.parse(document.querySelector('#content-data').textContent),logic=ProgressEngine,view=document.querySelector('[data-view-root]'),nav=document.querySelector('[data-main-nav]'),roleStatus=document.querySelector('[data-role-status]'),warning=document.querySelector('[data-storage-warning]'),dialog=document.querySelector('[data-confirm-dialog]'),zoom=document.querySelector('[data-zoom]'),toast=document.querySelector('[data-toast]');let zoomReturnFocus=null;document.querySelector('[data-brand]').textContent=data.title;
     const config={fingerprint:data.fingerprint,mode:data.mode,roles:data.roles.map(r=>({id:r.id,stageCount:r.stages.length}))};let storage=null;try{if(!new URLSearchParams(location.search).has('storage-off')){const key='__mm_test__';localStorage.setItem(key,'1');localStorage.removeItem(key);storage=localStorage}}catch{}warning.hidden=!!storage;let state=logic.createDefault(config);if(storage){const saved=storage.getItem(data.settings.progressKey);if(saved)try{state=logic.decode(saved,config)}catch{}}
     const el=(tag,cls,text)=>{const node=document.createElement(tag);if(cls)node.className=cls;if(text!==undefined)node.textContent=text;return node};const roleBy=id=>data.roles.find(r=>r.id===id);const currentRole=()=>roleBy(state.selectedRole);const progress=()=>state.selectedRole?state.roles[state.selectedRole]:null;function save(){if(storage)storage.setItem(data.settings.progressKey,logic.encode(state))}function notify(text){toast.textContent=text;toast.classList.add('show');clearTimeout(notify.timer);notify.timer=setTimeout(()=>toast.classList.remove('show'),1800)}
     function hero(eye,title,copy){const box=el('section','hero');box.append(el('p','eyebrow',eye),el('h1','',title));if(copy)box.append(el('p','',copy));return box}function action(label,handler,cls='action'){const b=el('button',cls,label);b.type='button';b.addEventListener('click',handler);return b}function link(label,href,cls='action'){const a=el('a',cls,label);a.href=href;return a}function confirmAction(title,message,label='确认'){return new Promise(resolve=>{dialog.querySelector('[data-dialog-title]').textContent=title;dialog.querySelector('[data-dialog-message]').textContent=message;dialog.querySelector('[data-dialog-confirm]').textContent=label;dialog.addEventListener('close',()=>resolve(dialog.returnValue==='confirm'),{once:true});dialog.showModal()})}
-    function imageButton(src,alt,cls='page-button'){const b=el('button',cls);b.type='button';b.setAttribute('aria-label','放大查看'+alt);const img=el('img');img.src=src;img.alt=alt;img.loading='lazy';b.append(img);b.addEventListener('click',()=>{zoom.querySelector('img').src=src;zoom.querySelector('img').alt=alt;zoom.classList.add('open')});return b}function pages(items,prefix){const box=el('section','pages');items.forEach((item,i)=>{const fig=el('figure','page');fig.append(imageButton(item.data,`${prefix} ${i+1}`),el('figcaption','',`${i+1} / ${items.length}`));box.append(fig)});return box}
+    function imageButton(src,alt,cls='page-button'){const b=el('button',cls);b.type='button';b.setAttribute('aria-label','放大查看'+alt);const img=el('img');img.src=src;img.alt=alt;img.loading='lazy';b.append(img);b.addEventListener('click',()=>{zoomReturnFocus=b;zoom.querySelector('img').src=img.src;zoom.querySelector('img').alt=img.alt;zoom.classList.add('open');zoom.querySelector('button').focus()});return b}function pages(items,prefix){const box=el('section','pages');items.forEach((item,i)=>{const fig=el('figure','page');fig.append(imageButton(item.data,`${prefix} ${i+1}`),el('figcaption','',`${i+1} / ${items.length}`));box.append(fig)});return box}
     function setNav(){nav.replaceChildren();if(!state.selectedRole){nav.append(link('选择角色','#home',''));roleStatus.textContent='尚未选择角色';return}roleStatus.textContent='当前角色：'+currentRole().name;[['我的角色','#role'],['游戏流程','#flow'],['线索中心','#clues'],['设置','#settings']].forEach(([t,h])=>nav.append(link(t,h,'')))}
     async function choose(role){const switching=state.selectedRole&&state.selectedRole!==role.id;if(state.selectedRole===role.id){location.hash='#role';return}if(await confirmAction(switching?'确认切换角色':'确认选择角色',switching?`确定切换为 ${role.name} 吗？各角色进度会分别保留。`:`确定选择 ${role.name} 吗？确认后进入第一个阶段。`,switching?'切换角色':'选择角色')){state=logic.selectRole(state,role.id);save();location.hash='#role';render()}}
-    function home(){view.append(hero('角色选择','选择你的角色',data.settings.intro));const grid=el('section','grid');data.roles.forEach(role=>{const card=el('article','panel'+(state.selectedRole===role.id?' current':''));if(state.selectedRole===role.id)card.append(el('span','badge','当前角色'));if(role.cover){const fig=el('figure','');fig.append(imageButton(role.cover.data,role.name+'角色封面','cover-button'));card.append(fig)}card.append(el('h2','',role.name),action(state.selectedRole===role.id?'进入我的角色':'选择这个角色',()=>choose(role)));grid.append(card)});view.append(grid)}
+    function home(){view.append(hero('角色选择','选择你的角色',data.settings.intro));const grid=el('section','grid role-grid');data.roles.forEach(role=>{const card=el('article','panel role-card'+(state.selectedRole===role.id?' current':''));if(state.selectedRole===role.id)card.append(el('span','badge','当前角色'));if(role.cover){const fig=el('figure','role-cover-frame');fig.append(imageButton(role.cover.data,role.name+'角色封面','cover-button'));card.append(fig)}card.append(el('h2','',role.name),action(state.selectedRole===role.id?'进入我的角色':'选择这个角色',()=>choose(role)));grid.append(card)});view.append(grid)}
     async function unlock(role,index){const stage=role.stages[index];if(index+1>state.roles[role.id].unlockedStage+1){notify('请先完成上一阶段');return}if(await confirmAction('进入'+stage.title,`确认解锁 ${stage.title} 吗？解锁后可以随时返回。`,'确认解锁')){state=logic.unlockStage(state,role.id,index+1,config);save();location.hash=`#role/${stage.id}`;render()}}
     function rolePage(stageId){const role=currentRole();if(!role){location.hash='#home';return}let index=stageId?role.stages.findIndex(s=>s.id===stageId):0;if(index<0)index=0;const unlocked=progress().unlockedStage;view.append(hero('我的角色',`${role.name} · ${role.stages[index].title}`,'点击页面可放大；已解锁阶段可以随时返回。'));const tabs=el('nav','tabs');role.stages.forEach((stage,i)=>tabs.append(link(stage.title,`#role/${stage.id}`,'pill'+(i===index?' active':'')+(i+1>unlocked?' locked':''))));view.append(tabs);if(index+1>unlocked){view.append(el('p','notice','当前阶段尚未解锁，确认后才会显示对应页面。'));if(index+1===unlocked+1)view.append(action('确认进入'+role.stages[index].title,()=>unlock(role,index)));else view.append(link('返回上一阶段',`#role/${role.stages[unlocked-1].id}`));return}view.append(pages(role.stages[index].items,role.name+role.stages[index].title));if(index+1===unlocked&&index+1<role.stages.length&&data.mode==='guided-single'){const next=el('section','next');next.append(el('h2','',`完成${role.stages[index].title}？`),action('确认进入'+role.stages[index+1].title,()=>unlock(role,index+1)));view.append(next)}}
     function flow(){const role=currentRole();if(!role){location.hash='#home';return}view.append(hero('无主持人模式','游戏流程','按照当前角色进度查看可用步骤。'));const list=el('section','flow');role.stages.forEach((stage,i)=>{const box=el('article','step');box.append(el('div','step-number',String(i+1)));const body=el('div');body.append(el('h2','',stage.title),el('p','',i+1<=progress().unlockedStage?'已解锁，可随时访问。':'完成上一阶段后解锁。'),i+1<=progress().unlockedStage?link('进入阶段',`#role/${stage.id}`):i+1===progress().unlockedStage+1?action('确认解锁',()=>unlock(role,i)):link('查看当前阶段',`#role/${role.stages[progress().unlockedStage-1].id}`));box.append(body);list.append(box)});data.manualSteps.forEach((step,i)=>{const open=step.unlockStage<=progress().unlockedStage;const box=el('article','step'+(open?'':' locked'));box.append(el('div','step-number','M'+(i+1)));const body=el('div');body.append(el('h2','',step.title),el('p','',open?'当前进度可访问。':`达到阶段 ${step.unlockStage} 后开放。`),open?link('查看','#manual/'+step.id):link('返回角色流程','#role'));box.append(body);list.append(box)});view.append(list)}
     function manual(id){const step=data.manualSteps.find(s=>s.id===id);if(!step||step.unlockStage>progress().unlockedStage){view.append(hero('尚未解锁','流程页面不可访问','请先完成对应角色阶段。'),link('返回游戏流程','#flow'));return}view.append(link('← 返回游戏流程','#flow','back'),hero('流程资料',step.title,'点击页面可放大。'),pages(step.items,step.title))}
     function clues(){view.append(hero('线索中心','全部线索','线索组会随当前角色阶段开放。'));const grid=el('section','grid');data.clueGroups.forEach(group=>{const open=group.unlockStage<=progress().unlockedStage,card=el('article','panel'+(open?'':' locked'));card.append(el('h2','',group.title),el('p','',`${group.cards.length} 项 · ${open?'已开放':`阶段 ${group.unlockStage} 开放`}`));if(open)card.append(link('查看','#clue-group/'+group.id));grid.append(card)});view.append(grid)}
     function clueGroup(id){const group=data.clueGroups.find(g=>g.id===id);if(!group||group.unlockStage>progress().unlockedStage){view.append(hero('尚未解锁','线索组不可访问','请先推进角色阶段。'),link('返回线索中心','#clues'));return}view.append(link('← 返回线索中心','#clues','back'),hero('线索组',group.title,`${group.cards.length} 项`));const grid=el('section','grid');group.cards.forEach(card=>{const box=el('article','panel');box.append(el('h2','',card.label),link('打开','#card/'+group.id+'/'+card.id));grid.append(box)});view.append(grid)}
-    function cardPage(groupId,cardId){const group=data.clueGroups.find(g=>g.id===groupId),card=group&&group.cards.find(c=>c.id===cardId);if(!group||!card||group.unlockStage>progress().unlockedStage){location.hash='#clues';return}view.append(link('← 返回'+group.title,'#clue-group/'+group.id,'back'),hero('线索卡',card.label,''));const reader=el('section','card-reader');reader.append(imageButton(card.front.data,card.label+'正面'));if(card.back){const reveal=action('查看背面',()=>{const img=reader.querySelector('img');const isBack=img.src===card.back.data;img.src=isBack?card.front.data:card.back.data;reveal.textContent=isBack?'查看背面':'返回正面'},'reveal');reader.append(reveal)}view.append(reader)}
+    function cardPage(groupId,cardId){const group=data.clueGroups.find(g=>g.id===groupId),card=group&&group.cards.find(c=>c.id===cardId);if(!group||!card||group.unlockStage>progress().unlockedStage){location.hash='#clues';return}view.append(link('← 返回'+group.title,'#clue-group/'+group.id,'back'),hero('线索卡',card.label,''));const reader=el('section','card-reader'),startsWithBack=!!card.back,initialSide=startsWithBack?'背面':'正面',imageControl=imageButton(startsWithBack?card.back.data:card.front.data,card.label+initialSide);reader.append(imageControl);if(card.back){let showingBack=true;const reveal=action('查看正面',()=>{showingBack=!showingBack;const img=imageControl.querySelector('img'),side=showingBack?'背面':'正面';img.src=showingBack?card.back.data:card.front.data;img.alt=card.label+side;imageControl.setAttribute('aria-label','放大查看'+img.alt);reveal.textContent=showingBack?'查看正面':'返回背面'},'reveal');reader.append(reveal)}view.append(reader)}
     function settings(){view.append(hero('本地设置','进度与角色','管理当前设备上的选择和游戏进度。'));const wrap=el('section','settings'),status=el('article','panel');status.append(el('h2','','当前状态'),el('p','',`角色：${currentRole().name} · 已解锁 ${progress().unlockedStage}/${currentRole().stages.length}`),link('重选角色','#home'));wrap.append(status);const backup=el('article','panel'),area=el('textarea');area.setAttribute('aria-label','进度码');area.placeholder='导出的进度码或待导入的进度码';const row=el('div','row');row.append(action('导出进度码',()=>{area.value=logic.encode(state);area.select();navigator.clipboard?.writeText(area.value).catch(()=>{});notify('进度码已生成')},'small'),action('导入进度码',async()=>{try{const restored=logic.decode(area.value,config);if(await confirmAction('导入进度','确认用进度码覆盖当前本地进度吗？','确认导入')){state=restored;save();notify('进度已导入');render()}}catch(error){notify(error.message)}},'small'));backup.append(el('h2','','进度码备份'),area,row);wrap.append(backup);const resets=el('article','panel'),resetRow=el('div','row');resetRow.append(action('重置当前角色',async()=>{if(await confirmAction('重置当前角色','此操作不可撤销，建议先导出进度码。','确认重置')){state=logic.resetRole(state,state.selectedRole,config);save();render()}},'small danger'),action('重置全部进度',async()=>{if(await confirmAction('重置全部进度','全部角色进度都会清除。','确认全部重置')){state=logic.resetAll(config);save();location.hash='#home';render()}},'small danger'));resets.append(el('h2','','重置进度'),resetRow);wrap.append(resets);view.append(wrap)}
     function render(){view.replaceChildren();setNav();const route=(location.hash||'#home').slice(1).split('/');if(!state.selectedRole&&route[0]!=='home'){location.hash='#home';home();return}if(route[0]==='home')home();else if(route[0]==='role')rolePage(route[1]);else if(route[0]==='flow')flow();else if(route[0]==='manual')manual(route[1]);else if(route[0]==='clues')clues();else if(route[0]==='clue-group')clueGroup(route[1]);else if(route[0]==='card')cardPage(route[1],route[2]);else if(route[0]==='settings')settings();else home();window.scrollTo(0,0)}
-    zoom.addEventListener('click',event=>{if(event.target===zoom||event.target.tagName==='BUTTON')zoom.classList.remove('open')});addEventListener('hashchange',render);render();
+    function closeZoom(){if(!zoom.classList.contains('open'))return;zoom.classList.remove('open');zoom.querySelector('img').removeAttribute('src');zoomReturnFocus?.focus();zoomReturnFocus=null}zoom.addEventListener('click',event=>{if(event.target===zoom||event.target.tagName==='BUTTON')closeZoom()});addEventListener('keydown',event=>{if(!zoom.classList.contains('open'))return;if(event.key==='Escape'){event.preventDefault();closeZoom()}else if(event.key==='Tab'){event.preventDefault();zoom.querySelector('button').focus()}});addEventListener('hashchange',render);render();
   })();
   </script>
 </body>

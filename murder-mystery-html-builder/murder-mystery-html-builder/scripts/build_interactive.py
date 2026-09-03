@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 
 SCHEMA_VERSION = 1
@@ -307,6 +307,16 @@ def _apply_crop(image: Image.Image, crop: list[float] | None) -> Image.Image:
     return image.crop((left, top, right, bottom))
 
 
+def _display_ready_rgb(image: Image.Image) -> Image.Image:
+    """Honor scan orientation and flatten transparency onto paper-white."""
+    oriented = ImageOps.exif_transpose(image)
+    if oriented.mode in {"RGBA", "LA"} or "transparency" in oriented.info:
+        rgba = oriented.convert("RGBA")
+        background = Image.new("RGBA", rgba.size, "white")
+        return Image.alpha_composite(background, rgba).convert("RGB")
+    return oriented.convert("RGB")
+
+
 def render_media(
     source_root: Path,
     reference: dict[str, Any],
@@ -347,10 +357,10 @@ def render_media(
                 message = completed.stderr.strip() or f"无法渲染 PDF 第 {page} 页"
                 raise ValueError(message)
             with Image.open(rendered) as opened:
-                image = opened.convert("RGB")
+                image = _display_ready_rgb(opened)
     else:
         with Image.open(source) as opened:
-            image = opened.convert("RGB")
+            image = _display_ready_rgb(opened)
     image = _apply_crop(image, reference.get("crop"))
     output = io.BytesIO()
     image.save(output, "JPEG", quality=quality, optimize=True, progressive=True)

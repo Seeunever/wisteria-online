@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +11,6 @@ from pypdf import PdfReader
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 DOCUMENT_SUFFIXES = {".docx", ".doc", ".odt", ".rtf"}
-TITLE_LIMIT = 240
 
 
 def _outline_titles(value: Any) -> list[str]:
@@ -29,13 +27,12 @@ def _outline_titles(value: Any) -> list[str]:
 
 def _text_candidate(page: Any) -> str:
     try:
-        text = page.extract_text() or ""
+        return " ".join((page.extract_text() or "").split())[:240]
     except Exception:
         return ""
-    return re.sub(r"\s+", " ", text).strip()[:TITLE_LIMIT]
 
 
-def _inspect_pdf(path: Path) -> dict[str, Any]:
+def _inspect_pdf(path: Path, include_text_candidates: bool = False) -> dict[str, Any]:
     try:
         reader = PdfReader(path)
         dimensions = [
@@ -45,17 +42,20 @@ def _inspect_pdf(path: Path) -> dict[str, Any]:
             }
             for page in reader.pages
         ]
-        try:
-            bookmarks = _outline_titles(reader.outline)
-        except Exception:
-            bookmarks = []
-        return {
+        result = {
             "type": "pdf",
             "pageCount": len(reader.pages),
             "pageDimensions": dimensions,
-            "bookmarks": bookmarks,
-            "titleCandidates": [_text_candidate(page) for page in reader.pages],
         }
+        if include_text_candidates:
+            # Explicit organizer-only opt-in. The participant-safe default never
+            # reads document headings or walks the PDF text layer page by page.
+            try:
+                result["bookmarks"] = _outline_titles(reader.outline)
+            except Exception:
+                result["bookmarks"] = []
+            result["titleCandidates"] = [_text_candidate(page) for page in reader.pages]
+        return result
     except Exception as error:
         return {"type": "pdf", "error": str(error)}
 
@@ -73,7 +73,7 @@ def _inspect_image(path: Path) -> dict[str, Any]:
         return {"type": "image", "error": str(error)}
 
 
-def inspect_folder(source_root: Path) -> dict[str, Any]:
+def inspect_folder(source_root: Path, include_text_candidates: bool = False) -> dict[str, Any]:
     root = Path(source_root).resolve()
     if not root.is_dir():
         raise ValueError(f"来源文件夹不存在：{root}")
@@ -81,7 +81,7 @@ def inspect_folder(source_root: Path) -> dict[str, Any]:
     for path in sorted((item for item in root.rglob("*") if item.is_file()), key=lambda item: item.as_posix().lower()):
         suffix = path.suffix.lower()
         if suffix == ".pdf":
-            details = _inspect_pdf(path)
+            details = _inspect_pdf(path, include_text_candidates=include_text_candidates)
         elif suffix in IMAGE_SUFFIXES:
             details = _inspect_image(path)
         elif suffix in DOCUMENT_SUFFIXES:
@@ -103,8 +103,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Inventory script-game source files without full OCR.")
     parser.add_argument("source_root", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--include-text-candidates",
+        action="store_true",
+        help="Organizer-only: read bookmarks and extract a short text-layer prefix from every PDF page.",
+    )
     args = parser.parse_args()
-    result = inspect_folder(args.source_root)
+    result = inspect_folder(
+        args.source_root,
+        include_text_candidates=args.include_text_candidates,
+    )
     serialized = json.dumps(result, ensure_ascii=False, indent=2)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

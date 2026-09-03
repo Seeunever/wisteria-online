@@ -91,6 +91,8 @@ python scripts/validate_output.py "C:\path\to\my-game\output\game.html"
 
 最后双击 `game.html` 即可离线运行。若要更强的防剧透隔离，把清单中的 `mode` 改为 `split`，并把输出参数改为空目录；生成器会创建入口页和相互分离的角色/幕次/线索/流程页面。
 
+默认盘点只记录文件结构、页数和页面尺寸，不读取 PDF 页面文字层或目录/书签文本。只有不参与游戏的组织者明确需要目录与文字候选时，才可额外传入 `--include-text-candidates`。
+
 ## 模式选择
 
 | 模式 | 适合场景 | 隔离强度 |

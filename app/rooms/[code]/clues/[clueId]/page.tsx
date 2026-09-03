@@ -5,9 +5,10 @@ import {
   projectVisibleClues,
   type AuthorizationContext,
 } from '@/lib/blind-runtime';
-import { loadFrozenBundle } from '@/lib/packs';
+import { loadInstalledPack } from '@/lib/packs';
 import { getRoomForMember } from '@/lib/rooms';
 import { ProtectedContent } from '../../protected-content';
+import { ClueFaceReader } from './clue-face-reader';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +22,7 @@ function loadVisibleClue(
   authorization: AuthorizationContext,
 ) {
   try {
-    return projectVisibleClues(loadFrozenBundle(versionId), authorization)
+    return projectVisibleClues(loadInstalledPack(versionId).bundle, authorization)
       .find((candidate) => candidate.clueId === clueId) ?? null;
   } catch {
     return null;
@@ -79,17 +80,22 @@ export default async function CluePage({ params }: CluePageProps) {
                 : '这张线索目前只有你能看到。'}
           </p>
           <article className="clue-content-card">
-            {clue.faces.map((face) => (
-              <div key={face.faceId}>
-                {face.content.map((content, index) => (
-                  <ProtectedContent
-                    key={`${face.faceId}-${index}`}
-                    code={room.code}
-                    content={content}
-                  />
-                ))}
-              </div>
-            ))}
+            <ClueFaceReader
+              key={clue.clueId}
+              faces={clue.faces.map(({ faceId, side }) => ({ faceId, side }))}
+            >
+              {clue.faces.map((face) => (
+                <div key={face.faceId}>
+                  {face.content.map((content, index) => (
+                    <ProtectedContent
+                      key={`${face.faceId}-${index}`}
+                      code={room.code}
+                      content={content}
+                    />
+                  ))}
+                </div>
+              ))}
+            </ClueFaceReader>
           </article>
           <div className="clue-decision-bar" aria-label="线索可见性选择">
             {!clue.publicationRequired ? (

@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { getRequestUser } from '@/lib/auth';
 import { canProjectImageContent, type AuthorizationContext } from '@/lib/blind-runtime';
-import { loadFrozenBundle, loadFrozenContentSource } from '@/lib/packs';
+import {
+  getRotatingBlindDrawRoomView,
+} from '@/lib/investigation/rotating-blind-draw-room';
+import {
+  canProjectRotatingBlindDrawImage,
+  isRotatingBlindDrawMechanism,
+} from '@/lib/investigation/rotating-blind-draw';
+import { loadFrozenContentSource, loadInstalledPack } from '@/lib/packs';
 import { getRoomForMember } from '@/lib/rooms';
 
 export const dynamic = 'force-dynamic';
@@ -24,7 +31,7 @@ export async function GET(
     const { code, contentId } = await params;
     const room = getRoomForMember(code, user.id);
     if (!room?.versionId) return denied();
-    const bundle = loadFrozenBundle(room.versionId);
+    const { bundle, runtimePolicy } = loadInstalledPack(room.versionId);
     const context: AuthorizationContext = {
       joined: true,
       assignedRoleId: room.assignedRoleId,
@@ -43,7 +50,30 @@ export async function GET(
       sessionCompleted: room.status === 'completed',
     };
     const block = bundle.contentBlocks[contentId];
-    if (!canProjectImageContent(bundle, contentId, context) || block?.kind !== 'image') return denied();
+    const canonicalProjectionAllowed = canProjectImageContent(bundle, contentId, context);
+    let canProject = canonicalProjectionAllowed;
+    if (context.activeStageId) {
+      const mechanism = runtimePolicy.stageMechanisms[context.activeStageId];
+      if (isRotatingBlindDrawMechanism(mechanism)) {
+        const view = getRotatingBlindDrawRoomView({
+          code: room.code,
+          userId: user.id,
+          versionId: room.versionId,
+          stageId: context.activeStageId,
+          bundle,
+          mechanism,
+        });
+        canProject = canProjectRotatingBlindDrawImage(
+          bundle,
+          mechanism,
+          context,
+          view?.drawOptions ?? [],
+          contentId,
+          canonicalProjectionAllowed,
+        );
+      }
+    }
+    if (!canProject || block?.kind !== 'image') return denied();
     const rawPart = request.nextUrl.searchParams.get('part') ?? '0';
     if (!/^(0|[1-9][0-9]{0,3})$/.test(rawPart)) return denied();
     const content = loadFrozenContentSource(room.versionId, contentId, Number(rawPart));
@@ -59,7 +89,7 @@ export async function GET(
       Math.ceil((content.region.y + content.region.height) * content.page.height),
     );
     if (right <= left || bottom <= top) return denied();
-    const bytes = await sharp(content.sourcePath, { page: content.inputPageIndex, limitInputPixels: 100_000_000 })
+    const bytes = await sharp(content.sourceBytes, { page: content.inputPageIndex, limitInputPixels: 100_000_000 })
       .rotate(content.page.rotation)
       .extract({ left, top, width: right - left, height: bottom - top })
       .webp({ quality: 90 })

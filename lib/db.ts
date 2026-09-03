@@ -53,6 +53,80 @@ function initialize(database: DatabaseSync) {
       frozen_at INTEGER
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS pack_runtime_profiles (
+      version_id TEXT PRIMARY KEY REFERENCES pack_versions(id) ON DELETE CASCADE,
+      mode TEXT NOT NULL CHECK (mode IN ('canonical', 'sidecar', 'legacy_embedded')),
+      canonical_payload_hash TEXT NOT NULL,
+      bundle_payload_hash TEXT,
+      policy_schema TEXT,
+      policy_path TEXT UNIQUE,
+      policy_payload_hash TEXT,
+      runtime_policy_hash TEXT,
+      created_at INTEGER NOT NULL,
+      CHECK (
+        (
+          mode = 'sidecar'
+          AND bundle_payload_hash IS NOT NULL
+          AND policy_schema = 'wisteria-runtime-policy/1.0'
+          AND policy_path IS NOT NULL
+          AND policy_payload_hash IS NOT NULL
+          AND runtime_policy_hash IS NOT NULL
+        )
+        OR
+        (
+          mode = 'canonical'
+          AND bundle_payload_hash IS NOT NULL
+          AND policy_schema IS NULL
+          AND policy_path IS NULL
+          AND policy_payload_hash IS NULL
+          AND runtime_policy_hash IS NULL
+        )
+        OR
+        (
+          mode = 'legacy_embedded'
+          AND policy_schema IS NULL
+          AND policy_path IS NULL
+          AND policy_payload_hash IS NULL
+          AND runtime_policy_hash IS NULL
+        )
+      )
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS pack_render_profiles (
+      version_id TEXT PRIMARY KEY REFERENCES pack_versions(id) ON DELETE CASCADE,
+      mode TEXT NOT NULL CHECK (mode IN ('manifest', 'legacy_embedded')),
+      canonical_payload_hash TEXT NOT NULL,
+      bundle_payload_hash TEXT,
+      manifest_schema TEXT,
+      manifest_path TEXT UNIQUE,
+      manifest_payload_hash TEXT,
+      render_manifest_hash TEXT,
+      created_at INTEGER NOT NULL,
+      CHECK (
+        (
+          mode = 'manifest'
+          AND bundle_payload_hash IS NOT NULL
+          AND manifest_schema = 'wisteria-render-manifest/1.0'
+          AND manifest_path IS NOT NULL
+          AND manifest_payload_hash IS NOT NULL
+          AND render_manifest_hash IS NOT NULL
+        )
+        OR
+        (
+          mode = 'legacy_embedded'
+          AND manifest_schema IS NULL
+          AND manifest_path IS NULL
+          AND manifest_payload_hash IS NULL
+          AND render_manifest_hash IS NULL
+        )
+      )
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS app_schema_migrations (
+      id TEXT PRIMARY KEY,
+      applied_at INTEGER NOT NULL
+    ) STRICT;
+
     CREATE TABLE IF NOT EXISTS rooms (
       id TEXT PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
@@ -200,6 +274,64 @@ function initialize(database: DatabaseSync) {
       ALTER TABLE investigation_completion_votes
       ADD COLUMN authorization_version INTEGER NOT NULL DEFAULT 1 CHECK (authorization_version > 0)
     `);
+  }
+
+  const runtimeProfileColumns = database.prepare(
+    'PRAGMA table_info(pack_runtime_profiles)',
+  ).all() as Array<{ name: string }>;
+  if (!runtimeProfileColumns.some((column) => column.name === 'bundle_payload_hash')) {
+    database.exec(`
+      ALTER TABLE pack_runtime_profiles
+      ADD COLUMN bundle_payload_hash TEXT
+    `);
+  }
+
+  const runtimeProfileMigration = '2026-09-03-pack-runtime-profile-registry';
+  const runtimeProfilesBackfilled = database.prepare(
+    'SELECT 1 FROM app_schema_migrations WHERE id = ?',
+  ).get(runtimeProfileMigration);
+  if (!runtimeProfilesBackfilled) {
+    database.exec('BEGIN IMMEDIATE');
+    try {
+      database.prepare(`
+        INSERT OR IGNORE INTO pack_runtime_profiles
+          (version_id, mode, canonical_payload_hash, created_at)
+        SELECT id, 'legacy_embedded', source_hash, ?
+        FROM pack_versions
+      `).run(Date.now());
+      database.prepare(`
+        INSERT INTO app_schema_migrations (id, applied_at)
+        VALUES (?, ?)
+      `).run(runtimeProfileMigration, Date.now());
+      database.exec('COMMIT');
+    } catch (error) {
+      try { database.exec('ROLLBACK'); } catch { /* transaction did not start */ }
+      throw error;
+    }
+  }
+
+  const renderProfileMigration = '2026-09-03-pack-render-profile-registry';
+  const renderProfilesBackfilled = database.prepare(
+    'SELECT 1 FROM app_schema_migrations WHERE id = ?',
+  ).get(renderProfileMigration);
+  if (!renderProfilesBackfilled) {
+    database.exec('BEGIN IMMEDIATE');
+    try {
+      database.prepare(`
+        INSERT OR IGNORE INTO pack_render_profiles
+          (version_id, mode, canonical_payload_hash, created_at)
+        SELECT id, 'legacy_embedded', source_hash, ?
+        FROM pack_versions
+      `).run(Date.now());
+      database.prepare(`
+        INSERT INTO app_schema_migrations (id, applied_at)
+        VALUES (?, ?)
+      `).run(renderProfileMigration, Date.now());
+      database.exec('COMMIT');
+    } catch (error) {
+      try { database.exec('ROLLBACK'); } catch { /* transaction did not start */ }
+      throw error;
+    }
   }
 }
 

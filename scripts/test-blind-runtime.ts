@@ -19,6 +19,11 @@ import {
   type BlindBundle,
   type ContentBlock,
 } from '../lib/blind-runtime.ts';
+import {
+  InvestigationConfigError,
+  normalizeSearchMechanism,
+  validateStageSearchMechanisms,
+} from '../lib/investigation/config.ts';
 
 const PUBLIC_CANARY = 'PUBLIC_CANARY';
 const LOBBY_PROFILE_CANARY = 'LOBBY_PROFILE_CANARY';
@@ -69,7 +74,11 @@ function block(
 
 const bundle: BlindBundle = {
   schemaVersion: 'blind-script/1.0',
-  script: { versionId: 'ver_aaaaaaaa', titleContentId: 'cnt_aaaaaaaa' },
+  script: {
+    versionId: 'ver_aaaaaaaa',
+    canonicalPayloadHash: `sha256:${'a'.repeat(64)}`,
+    titleContentId: 'cnt_aaaaaaaa',
+  },
   sources: {},
   assets: {},
   contentBlocks: {
@@ -158,6 +167,124 @@ const bundle: BlindBundle = {
     },
   },
 };
+
+const legacyCollectiveFlow = {
+  locationSelection: {
+    mode: 'vote',
+    scope: 'room_scoped',
+    resolution: 'plurality_all_cast',
+    tieBreak: 'seat_cursor_choice',
+  },
+  turnOrder: { mode: 'seat_order' },
+  clueDeal: { mode: 'verified_pool_order', commit: 'one_per_turn' },
+  acquisitionLimit: { scope: 'stage', perPlayer: 2 },
+  publicationDuty: {
+    predicate: 'round_scoped_private_holding_count',
+    maxPrivateCount: 1,
+    action: 'publish_one_held',
+    blockedActions: ['vote_location', 'search'],
+  },
+  roleRestrictions: [{
+    principalRoleId: 'role_aaaaaaaa',
+    restrictedLocationIds: ['loc_aaaaaaaa'],
+    restrictedClueIds: ['clue_aaaaaaaa'],
+    mode: 'deny_unless_only_remaining_eligible',
+  }],
+  completion: { mode: 'consent_vote', exhaustive: 'per_player_quota' },
+};
+
+function expectInvestigationConfigError(
+  value: unknown,
+  code: InvestigationConfigError['code'],
+) {
+  assert.throws(
+    () => normalizeSearchMechanism(value),
+    (error) => error instanceof InvestigationConfigError && error.code === code,
+  );
+}
+
+test('search mechanism normalization supports direct, legacy, and tagged v1 without mutation', () => {
+  assert.deepEqual(normalizeSearchMechanism(undefined), { kind: 'direct_pick', version: 1 });
+
+  const legacySnapshot = structuredClone(legacyCollectiveFlow);
+  const legacy = normalizeSearchMechanism(legacyCollectiveFlow);
+  const taggedSource = {
+    kind: 'collective_vote_round_robin',
+    version: 1,
+    ...legacyCollectiveFlow,
+  };
+  const taggedSnapshot = structuredClone(taggedSource);
+  const tagged = normalizeSearchMechanism(taggedSource);
+
+  assert.deepEqual(legacy, tagged);
+  assert.equal(legacy.kind, 'collective_vote_round_robin');
+  assert.equal(legacy.version, 1);
+  assert.deepEqual(legacyCollectiveFlow, legacySnapshot);
+  assert.deepEqual(taggedSource, taggedSnapshot);
+  assert.notEqual(legacy.locationSelection, legacyCollectiveFlow.locationSelection);
+  assert.notEqual(legacy.publicationDuty.blockedActions, legacyCollectiveFlow.publicationDuty.blockedActions);
+  assert.notEqual(legacy.roleRestrictions, legacyCollectiveFlow.roleRestrictions);
+  assert.notEqual(legacy.roleRestrictions?.[0], legacyCollectiveFlow.roleRestrictions[0]);
+});
+
+test('search mechanism normalization rejects unknown tags and malformed flows', () => {
+  expectInvestigationConfigError(
+    { ...legacyCollectiveFlow, kind: 'future_mechanism', version: 1 },
+    'UNSUPPORTED_INVESTIGATION_KIND',
+  );
+  expectInvestigationConfigError(
+    { ...legacyCollectiveFlow, kind: 'collective_vote_round_robin', version: 2 },
+    'UNSUPPORTED_INVESTIGATION_VERSION',
+  );
+  expectInvestigationConfigError(
+    { ...legacyCollectiveFlow, kind: 'collective_vote_round_robin' },
+    'MALFORMED_INVESTIGATION_FLOW',
+  );
+  expectInvestigationConfigError(
+    { ...legacyCollectiveFlow, unexpected: true },
+    'MALFORMED_INVESTIGATION_FLOW',
+  );
+  expectInvestigationConfigError(
+    { ...legacyCollectiveFlow, acquisitionLimit: { scope: 'stage', perPlayer: 0 } },
+    'MALFORMED_INVESTIGATION_FLOW',
+  );
+  expectInvestigationConfigError(
+    {
+      ...legacyCollectiveFlow,
+      publicationDuty: {
+        ...legacyCollectiveFlow.publicationDuty,
+        blockedActions: ['search', 'search'],
+      },
+    },
+    'MALFORMED_INVESTIGATION_FLOW',
+  );
+  expectInvestigationConfigError(null, 'MALFORMED_INVESTIGATION_FLOW');
+});
+
+test('stage mechanism validation accepts old stages and fails closed on unsupported flows', () => {
+  assert.doesNotThrow(() => validateStageSearchMechanisms({
+    stage_direct: { stageId: 'stage_direct' },
+    stage_legacy: { stageId: 'stage_legacy', investigationFlow: legacyCollectiveFlow },
+    stage_tagged: {
+      stageId: 'stage_tagged',
+      investigationFlow: {
+        kind: 'collective_vote_round_robin',
+        version: 1,
+        ...legacyCollectiveFlow,
+      },
+    },
+  }));
+  assert.throws(() => validateStageSearchMechanisms({
+    stage_unknown: {
+      investigationFlow: { ...legacyCollectiveFlow, kind: 'unknown', version: 1 },
+    },
+  }), InvestigationConfigError);
+  assert.throws(() => validateStageSearchMechanisms({
+    stage_malformed: {
+      investigationFlow: { ...legacyCollectiveFlow, turnOrder: { mode: 'random' } },
+    },
+  }), InvestigationConfigError);
+});
 
 test('condition evaluation fails closed and respects current state', () => {
   const current = context({ reachedStageIds: new Set(['stage_aaaaaaaa']) });
@@ -254,6 +381,14 @@ test('viewer-scoped role gates do not inherit another member role', () => {
 
   const restrictedBundle: BlindBundle = {
     ...bundle,
+    stages: {
+      ...bundle.stages,
+      stage_aaaaaaaa: {
+        ...bundle.stages.stage_aaaaaaaa,
+        allowedActions: ['read_role_section', 'search'],
+        locationIds: ['loc_aaaaaaaa'],
+      },
+    },
     locations: {
       ...bundle.locations,
       loc_aaaaaaaa: {
@@ -667,13 +802,49 @@ test('locations and held clues follow stage and ownership state', () => {
     activeStageId: 'stage_aaaaaaaa',
     reachedStageIds: new Set(['stage_aaaaaaaa']),
   });
-  const locations = projectAvailableLocations(bundle, assigned);
-  assert.equal(locations.length, 1);
+  const searchableBundle: BlindBundle = {
+    ...bundle,
+    stages: {
+      ...bundle.stages,
+      stage_aaaaaaaa: {
+        ...bundle.stages.stage_aaaaaaaa,
+        allowedActions: ['read_role_section', 'search'],
+        locationIds: ['loc_bbbbbbbb', 'loc_aaaaaaaa'],
+      },
+    },
+    locations: {
+      ...bundle.locations,
+      loc_bbbbbbbb: {
+        ...bundle.locations.loc_aaaaaaaa,
+        locationId: 'loc_bbbbbbbb',
+        availableWhen: { op: 'always' },
+      },
+      loc_cccccccc: {
+        ...bundle.locations.loc_aaaaaaaa,
+        locationId: 'loc_cccccccc',
+        availableWhen: { op: 'always' },
+      },
+    },
+  };
+  const locations = projectAvailableLocations(searchableBundle, assigned);
+  assert.deepEqual(locations.map((location) => location.locationId), [
+    'loc_bbbbbbbb',
+    'loc_aaaaaaaa',
+  ]);
   assert.deepEqual(locations[0].clueChoices, [{ clueId: 'clue_aaaaaaaa', number: 1 }]);
-  assert.deepEqual(projectAvailableLocations(bundle, {
+  assert.deepEqual(projectAvailableLocations(searchableBundle, {
     ...assigned,
     roomHeldClueIds: new Set(['clue_aaaaaaaa']),
   })[0].clueChoices, []);
+  assert.deepEqual(projectAvailableLocations(searchableBundle, {
+    ...assigned,
+    activeStageId: null,
+  }), []);
+  assert.equal(
+    projectAvailableLocations(searchableBundle, assigned)
+      .some((location) => location.locationId === 'loc_cccccccc'),
+    false,
+  );
   assert.equal(JSON.stringify(projectVisibleClues(bundle, assigned)).includes(CLUE_CANARY), false);
   const holder = {
     ...assigned,

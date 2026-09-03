@@ -1,3 +1,16 @@
+import type {
+  CollectiveVoteRoundRobinFlowV1,
+  InvestigationFlow,
+} from './investigation/config.ts';
+
+export type {
+  CollectiveVoteRoundRobinFlowV1,
+  DirectPickMechanismV1,
+  InvestigationFlow,
+  LegacyCollectiveVoteRoundRobinFlow,
+  NormalizedSearchMechanism,
+} from './investigation/config.ts';
+
 export type BlindCondition =
   | { op: 'always' | 'session_completed' }
   | { op: 'all' | 'any'; args: BlindCondition[] }
@@ -57,6 +70,7 @@ export type BlindBundle = {
   schemaVersion: 'blind-script/1.0';
   script: {
     versionId: string;
+    canonicalPayloadHash: string;
     titleContentId: string;
   };
   sources: Record<string, {
@@ -97,39 +111,7 @@ export type BlindBundle = {
     completeWhen: BlindCondition;
     allowedActions: string[];
     locationIds: string[];
-    investigationFlow?: {
-      locationSelection: {
-        mode: 'vote';
-        scope: 'room_scoped' | 'stage_scoped';
-        resolution: 'plurality_all_cast';
-        tieBreak: 'seat_cursor_choice';
-      };
-      turnOrder: { mode: 'seat_order' };
-      clueDeal: {
-        mode: 'verified_pool_order';
-        commit: 'one_per_turn';
-      };
-      acquisitionLimit: {
-        scope: 'stage';
-        perPlayer: number;
-      };
-      publicationDuty: {
-        predicate: 'round_scoped_private_holding_count';
-        maxPrivateCount: number;
-        action: 'publish_one_held';
-        blockedActions: Array<'vote_location' | 'search'>;
-      };
-      roleRestrictions?: Array<{
-        principalRoleId: string;
-        restrictedLocationIds: string[];
-        restrictedClueIds: string[];
-        mode: 'deny_unless_only_remaining_eligible';
-      }>;
-      completion?: {
-        mode: 'consent_vote';
-        exhaustive: 'per_player_quota';
-      };
-    };
+    investigationFlow?: InvestigationFlow;
   }>;
   locations: Record<string, {
     locationId: string;
@@ -350,9 +332,10 @@ export function deriveInvestigationCandidates(
   context: AuthorizationContext,
   viewers: InvestigationViewerState[],
   searchedLocationIds: ReadonlySet<string>,
+  flowOverride?: CollectiveVoteRoundRobinFlowV1,
 ): InvestigationCandidates {
   const stage = bundle.stages[stageId];
-  const flow = stage?.investigationFlow;
+  const flow = flowOverride ?? stage?.investigationFlow;
   if (!stage || !flow || !context.joined) return emptyInvestigationCandidates();
 
   const roomLocationIds = new Set<string>();
@@ -649,9 +632,14 @@ export function projectAvailableLocations(
   context: AuthorizationContext,
   options?: { clueIdsByLocation?: Readonly<Record<string, readonly string[]>> },
 ) {
-  if (!context.joined || !context.assignedRoleId) return [];
-  return Object.values(bundle.locations)
-    .filter((location) => evaluateViewerCondition(location.availableWhen, context))
+  if (!context.joined || !context.assignedRoleId || !context.activeStageId) return [];
+  const activeStage = bundle.stages[context.activeStageId];
+  if (!activeStage?.allowedActions.includes('search')) return [];
+  return activeStage.locationIds
+    .map((locationId) => bundle.locations[locationId])
+    .filter((location): location is BlindBundle['locations'][string] => Boolean(
+      location && evaluateViewerCondition(location.availableWhen, context),
+    ))
     .map((location) => {
       const availableClues = location.cluePool
         .filter((entry) => (

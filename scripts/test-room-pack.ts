@@ -54,6 +54,16 @@ test('room versions freeze atomically and incomplete starts require an explicit 
       `sha256:${'a'.repeat(64)}`, now, now,
     );
     database.prepare(`
+      INSERT INTO pack_runtime_profiles
+        (version_id, mode, canonical_payload_hash, created_at)
+      VALUES (?, 'legacy_embedded', ?, ?)
+    `).run('ver_aaaaaaaa', `sha256:${'a'.repeat(64)}`, now);
+    database.prepare(`
+      INSERT INTO pack_render_profiles
+        (version_id, mode, canonical_payload_hash, created_at)
+      VALUES (?, 'legacy_embedded', ?, ?)
+    `).run('ver_aaaaaaaa', `sha256:${'a'.repeat(64)}`, now);
+    database.prepare(`
       INSERT INTO pack_versions
         (id, public_label, payload_path, source_hash, state, created_at, frozen_at)
       VALUES (?, ?, ?, ?, 'validated', ?, NULL)
@@ -61,6 +71,19 @@ test('room versions freeze atomically and incomplete starts require an explicit 
       'ver_bbbbbbbb', 'Unfrozen synthetic pack', 'packs/ver_bbbbbbbb/bundle.internal.json',
       `sha256:${'b'.repeat(64)}`, now,
     );
+    database.prepare(`
+      INSERT INTO pack_versions
+        (id, public_label, payload_path, source_hash, state, created_at, frozen_at)
+      VALUES (?, ?, ?, ?, 'frozen', ?, ?)
+    `).run(
+      'ver_cccccccc', 'Missing-profile pack', 'packs/ver_cccccccc/bundle.internal.json',
+      `sha256:${'c'.repeat(64)}`, now, now,
+    );
+    database.prepare(`
+      INSERT INTO pack_runtime_profiles
+        (version_id, mode, canonical_payload_hash, created_at)
+      VALUES (?, 'legacy_embedded', ?, ?)
+    `).run('ver_cccccccc', `sha256:${'c'.repeat(64)}`, now);
 
     assert.equal(createRoom('user-owner', 'ver_bbbbbbbb'), null);
     assert.equal(createRoom('user-owner', 'ver_cccccccc'), null);
@@ -94,6 +117,7 @@ test('room versions freeze atomically and incomplete starts require an explicit 
     const code = createRoom('user-owner');
     assert.notEqual(code, null);
     assert.equal(attachFrozenPackToRoom(code!, 'user-other', 'ver_aaaaaaaa'), false);
+    assert.equal(attachFrozenPackToRoom(code!, 'user-owner', 'ver_cccccccc'), false);
     assert.equal(attachFrozenPackToRoom(code!, 'user-owner', 'ver_aaaaaaaa'), true);
     assert.equal(attachFrozenPackToRoom(code!, 'user-owner', 'ver_aaaaaaaa'), false);
 
@@ -196,14 +220,18 @@ test('room versions freeze atomically and incomplete starts require an explicit 
     ), false);
     assert.equal(searchLocation({
       code: code!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(code!),
       locationId: 'loc_aaaaaaaa', stageId: 'stage_aaaaaaaa',
+      usageStageIds: ['stage_aaaaaaaa'],
       selectedClueId: 'clue_aaaaaaaa',
       eligibleClueIds: ['clue_aaaaaaaa'], mode: 'fixed_sequence',
       perPlayerLimit: 1, globalLimit: 1,
     }), true);
     assert.equal(searchLocation({
       code: code!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(code!),
       locationId: 'loc_aaaaaaaa', stageId: 'stage_aaaaaaaa',
+      usageStageIds: ['stage_aaaaaaaa'],
       selectedClueId: 'clue_bbbbbbbb',
       eligibleClueIds: ['clue_bbbbbbbb'], mode: 'fixed_sequence',
       perPlayerLimit: 1, globalLimit: 1,
@@ -233,6 +261,50 @@ test('room versions freeze atomically and incomplete starts require an explicit 
       code: code!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
       authorizationVersion: authorizationVersion(code!), clueId: 'clue_aaaaaaaa',
     }), false);
+
+    const usageWindowCode = createRoom('user-owner', 'ver_aaaaaaaa');
+    assert.notEqual(usageWindowCode, null);
+    assert.equal(claimRole(usageWindowCode!, 'user-owner', 'role_aaaaaaaa'), true);
+    assert.equal(startRoom(
+      usageWindowCode!, 'user-owner', 'ver_aaaaaaaa', ['role_aaaaaaaa'],
+      'stage_aaaaaaaa', 1, authorizationVersion(usageWindowCode!),
+    ), true);
+    const usageWindowRoom = database.prepare(
+      'SELECT id FROM rooms WHERE code = ?',
+    ).get(usageWindowCode) as { id: string };
+    const usageWindowMembership = database.prepare(`
+      SELECT memberships.id
+      FROM memberships
+      WHERE memberships.room_id = ? AND memberships.user_id = 'user-owner'
+    `).get(usageWindowRoom.id) as { id: string };
+    database.prepare(`
+      INSERT INTO search_uses (room_id, location_id, stage_id, membership_id, uses)
+      VALUES (?, 'loc_aaaaaaaa', 'stage_aaaaaaaa', ?, 1)
+    `).run(usageWindowRoom.id, usageWindowMembership.id);
+    database.prepare(`
+      INSERT INTO location_search_totals (room_id, location_id, stage_id, uses)
+      VALUES (?, 'loc_aaaaaaaa', 'stage_aaaaaaaa', 1)
+    `).run(usageWindowRoom.id);
+    database.prepare(`
+      UPDATE room_stages SET completed_at = ?
+      WHERE room_id = ? AND stage_id = 'stage_aaaaaaaa'
+    `).run(Date.now(), usageWindowRoom.id);
+    database.prepare(`
+      INSERT INTO room_stages (room_id, stage_id, sequence, entered_at)
+      VALUES (?, 'stage_bbbbbbbb', 2, ?)
+    `).run(usageWindowRoom.id, Date.now());
+    database.prepare(`
+      UPDATE rooms SET authorization_version = authorization_version + 1 WHERE id = ?
+    `).run(usageWindowRoom.id);
+    const windowedSearch = (usageStageIds: string[]) => searchLocation({
+      code: usageWindowCode!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(usageWindowCode!),
+      locationId: 'loc_aaaaaaaa', stageId: 'stage_bbbbbbbb', usageStageIds,
+      selectedClueId: 'clue_eeeeeeee', eligibleClueIds: ['clue_eeeeeeee'],
+      mode: 'draw_without_replacement', perPlayerLimit: 1, globalLimit: 1,
+    });
+    assert.equal(windowedSearch(['stage_aaaaaaaa', 'stage_bbbbbbbb']), false);
+    assert.equal(windowedSearch(['stage_bbbbbbbb']), true);
 
     const investigationCode = createRoom('user-owner', 'ver_aaaaaaaa');
     assert.notEqual(investigationCode, null);

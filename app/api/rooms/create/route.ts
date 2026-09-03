@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUser } from '@/lib/auth';
+import { loadInstalledPack } from '@/lib/packs';
 import { createRoom } from '@/lib/rooms';
 import { assertSameOrigin } from '@/lib/security';
 
@@ -12,6 +13,7 @@ export async function POST(request: NextRequest) {
     const form = await request.formData();
     const versionId = form.get('versionId');
     if (typeof versionId !== 'string') throw new Error('PACK_SELECTION_REQUIRED');
+    loadInstalledPack(versionId);
     const code = createRoom(user.id, versionId);
     if (!code) throw new Error('ROOM_CREATE_FAILED');
     return NextResponse.redirect(new URL(`/rooms/${code}`, origin), 303);

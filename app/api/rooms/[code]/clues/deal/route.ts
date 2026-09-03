@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUser } from '@/lib/auth';
 import { evaluateViewerCondition, type AuthorizationContext } from '@/lib/blind-runtime';
-import { loadFrozenBundle } from '@/lib/packs';
+import { loadInstalledPack } from '@/lib/packs';
 import { dealLocationClue, getRoomForMember } from '@/lib/rooms';
+import { canonicalUsageWindowStageIds } from '@/lib/search-policy-window';
 import { assertSameOrigin } from '@/lib/security';
 
 export async function POST(
@@ -29,12 +30,14 @@ export async function POST(
     if (typeof locationId !== 'string' || typeof targetMembershipId !== 'string') {
       throw new Error('DEAL_REJECTED');
     }
-    const bundle = loadFrozenBundle(room.versionId);
+    const { bundle, runtimePolicy } = loadInstalledPack(room.versionId);
     const stage = bundle.stages[activeStageId];
+    const mechanism = runtimePolicy.stageMechanisms[activeStageId];
     const location = bundle.locations[locationId];
     if (
       !stage?.allowedActions.includes('search')
-      || Boolean(stage.investigationFlow)
+      || !mechanism
+      || !['canonical_search_policy', 'direct_pick'].includes(mechanism.kind)
       || !location
       || location.searchPolicy.mode !== 'host_dealt'
       || !stage.locationIds.includes(locationId)
@@ -72,6 +75,7 @@ export async function POST(
       authorizationVersion: room.authorizationVersion,
       locationId,
       stageId: activeStageId,
+      usageStageIds: canonicalUsageWindowStageIds(bundle, activeStageId, locationId),
       targetMembershipId,
       eligibleClueIds,
       perPlayerLimit: location.searchPolicy.perPlayerLimit,

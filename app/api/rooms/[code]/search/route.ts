@@ -4,9 +4,13 @@ import {
   deriveInvestigationCandidates,
   evaluateViewerCondition,
   type AuthorizationContext,
+  type CollectiveVoteRoundRobinFlowV1,
 } from '@/lib/blind-runtime';
-import { loadFrozenBundle } from '@/lib/packs';
+import { acquireRotatingBlindDrawClue } from '@/lib/investigation/rotating-blind-draw-room';
+import { isRotatingBlindDrawMechanism } from '@/lib/investigation/rotating-blind-draw';
+import { loadInstalledPack } from '@/lib/packs';
 import { getRoomForMember, searchInvestigationLocation, searchLocation } from '@/lib/rooms';
+import { canonicalUsageWindowStageIds } from '@/lib/search-policy-window';
 import { assertSameOrigin } from '@/lib/security';
 
 export async function POST(
@@ -27,17 +31,45 @@ export async function POST(
     const form = await request.formData();
     const locationId = form.get('locationId');
     const clueId = form.get('clueId');
-    if (typeof locationId !== 'string' || typeof clueId !== 'string') {
+    const authorizationVersion = Number(form.get('authorizationVersion'));
+    if (
+      typeof locationId !== 'string'
+      || typeof clueId !== 'string'
+      || authorizationVersion !== room.authorizationVersion
+    ) {
       throw new Error('SEARCH_REJECTED');
     }
-    const bundle = loadFrozenBundle(room.versionId);
+    const { bundle, runtimePolicy } = loadInstalledPack(room.versionId);
     const stage = bundle.stages[activeStageId];
+    const mechanism = runtimePolicy.stageMechanisms[activeStageId];
     const location = bundle.locations[locationId];
     if (
       !stage?.allowedActions.includes('search')
       || !location
       || !stage.locationIds.includes(locationId)
+      || !mechanism
     ) throw new Error('SEARCH_REJECTED');
+
+    if (isRotatingBlindDrawMechanism(mechanism)) {
+      if (!acquireRotatingBlindDrawClue({
+        code: room.code,
+        userId: user.id,
+        versionId: room.versionId,
+        authorizationVersion,
+        stageId: activeStageId,
+        locationId,
+        clueId,
+        bundle,
+        mechanism,
+      })) throw new Error('SEARCH_REJECTED');
+      return NextResponse.redirect(new URL(`/rooms/${code}/clues/${clueId}`, origin), 303);
+    }
+    const flow = mechanism.kind === 'collective_vote_round_robin' && mechanism.version === 1
+      ? mechanism as CollectiveVoteRoundRobinFlowV1
+      : null;
+    if (!flow && !['canonical_search_policy', 'direct_pick'].includes(mechanism.kind)) {
+      throw new Error('SEARCH_REJECTED');
+    }
 
     const assignedRoleIds = new Set(
       room.members.map((member) => member.assignedRoleId).filter((id): id is string => id !== null),
@@ -70,7 +102,7 @@ export async function POST(
     const selectableClueIds = location.searchPolicy.mode === 'fixed_sequence'
       ? actorBaseEligibleClueIds.slice(0, 1)
       : actorBaseEligibleClueIds;
-    if (stage.investigationFlow) {
+    if (flow) {
       const candidates = deriveInvestigationCandidates(
         bundle,
         activeStageId,
@@ -80,11 +112,11 @@ export async function POST(
           heldClueIds: new Set(member.heldClueIds),
         }] : []),
         new Set(),
+        flow,
       );
       const globalEligibleClueIds = candidates.roomClueIdsByLocation[locationId] ?? [];
       const actorEligibleClueIds = candidates.actorClueIdsByLocation[locationId] ?? [];
       if (!actorEligibleClueIds.includes(clueId)) throw new Error('SEARCH_REJECTED');
-      const authorizationVersion = Number(form.get('authorizationVersion'));
       const orderedMembershipIds = Object.values(bundle.roles)
         .sort((left, right) => left.slot - right.slot)
         .map((role) => room.members.find((member) => member.assignedRoleId === role.roleId)?.membershipId)
@@ -105,21 +137,24 @@ export async function POST(
           eligibleClueIds: globalEligibleClueIds,
           actorEligibleClueIds,
           orderedMembershipIds,
-          perPlayerStageLimit: stage.investigationFlow.acquisitionLimit.perPlayer,
-          maxPrivateCount: stage.investigationFlow.publicationDuty.maxPrivateCount,
+          perPlayerStageLimit: flow.acquisitionLimit.perPlayer,
+          maxPrivateCount: flow.publicationDuty.maxPrivateCount,
           mandatoryClueIds,
-          blockForPublication: stage.investigationFlow.publicationDuty.blockedActions.includes('search'),
+          blockForPublication: flow.publicationDuty.blockedActions.includes('search'),
         })
       ) throw new Error('SEARCH_REJECTED');
       return NextResponse.redirect(new URL(`/rooms/${code}/clues/${clueId}`, origin), 303);
     }
+    if (location.searchPolicy.mode === 'host_dealt') throw new Error('SEARCH_REJECTED');
     if (!selectableClueIds.includes(clueId)) throw new Error('SEARCH_REJECTED');
     if (!searchLocation({
       code: room.code,
       userId: user.id,
       versionId: room.versionId,
+      authorizationVersion,
       locationId,
       stageId: activeStageId,
+      usageStageIds: canonicalUsageWindowStageIds(bundle, activeStageId, locationId),
       selectedClueId: clueId,
       eligibleClueIds: actorBaseEligibleClueIds,
       mode: location.searchPolicy.mode,

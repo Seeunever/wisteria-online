@@ -2,7 +2,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { getInvestigationState, getRoomForMember } from '@/lib/rooms';
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
-import { listFrozenPackVersions, loadFrozenBundle } from '@/lib/packs';
+import { listFrozenPackVersions, loadInstalledPack } from '@/lib/packs';
 import {
   deriveInvestigationCandidates,
   evaluateStageFlowCondition,
@@ -14,8 +14,17 @@ import {
   projectVisibleClues,
   withEligibleHostReleases,
   type AuthorizationContext,
+  type CollectiveVoteRoundRobinFlowV1,
   type InvestigationCandidates,
 } from '@/lib/blind-runtime';
+import {
+  getRotatingBlindDrawRoomView,
+  type RotatingBlindDrawRoomView,
+} from '@/lib/investigation/rotating-blind-draw-room';
+import {
+  isRotatingBlindDrawMechanism,
+  runtimeMechanismsRequireFullRoleAssignment,
+} from '@/lib/investigation/rotating-blind-draw';
 import { ProtectedContent } from './protected-content';
 
 export const dynamic = 'force-dynamic';
@@ -48,6 +57,8 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
               ? '投票没有提交成功。房间状态可能刚刚变化，请刷新后再选。'
             : error === 'completion'
               ? '阶段确认没有提交成功。请先完成剩余调查和必须公开的线索，再刷新重试。'
+            : error === 'tie-break'
+              ? '地点裁定没有提交成功。房间状态可能刚刚变化，请刷新后再选。'
           : null;
   const isOwner = room.ownerUserId === user.id;
   const packs = isOwner && !room.versionId ? listFrozenPackVersions() : [];
@@ -78,15 +89,20 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
   let investigationState: ReturnType<typeof getInvestigationState> | null = null;
   let investigationCandidates: InvestigationCandidates | null = null;
   let investigationFlow: NonNullable<
-    ReturnType<typeof loadFrozenBundle>['stages'][string]['investigationFlow']
+    CollectiveVoteRoundRobinFlowV1
   > | null = null;
+  let rotatingInvestigation: RotatingBlindDrawRoomView | null = null;
   let packRoleCount = 0;
+  let fullRoleAssignmentRequired = false;
   let packLoadFailed = false;
   let canAdvance = false;
   if (room.versionId) {
     try {
-      const bundle = loadFrozenBundle(room.versionId);
+      const { bundle, runtimePolicy } = loadInstalledPack(room.versionId);
       packRoleCount = Object.keys(bundle.roles).length;
+      fullRoleAssignmentRequired = runtimeMechanismsRequireFullRoleAssignment(
+        runtimePolicy.stageMechanisms,
+      );
       lobby = room.status === 'lobby' ? projectLobby(bundle, authorization) : null;
       assignedRole = projectAssignedRole(bundle, authorization);
       visibleClues = projectVisibleClues(bundle, authorization);
@@ -95,8 +111,28 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
       const activeStage = authorization.activeStageId
         ? bundle.stages[authorization.activeStageId]
         : null;
-      investigationFlow = activeStage?.investigationFlow ?? null;
-      if (activeStage && investigationFlow) {
+      const mechanism = activeStage
+        ? runtimePolicy.stageMechanisms[activeStage.stageId]
+        : null;
+      if (activeStage?.allowedActions.includes('search') && !mechanism) {
+        throw new Error('RUNTIME_POLICY_REJECTED');
+      }
+      investigationFlow = mechanism?.kind === 'collective_vote_round_robin'
+        && mechanism.version === 1
+        ? mechanism as CollectiveVoteRoundRobinFlowV1
+        : null;
+      if (activeStage && mechanism && isRotatingBlindDrawMechanism(mechanism)) {
+        rotatingInvestigation = getRotatingBlindDrawRoomView({
+          code: room.code,
+          userId: user.id,
+          versionId: room.versionId,
+          stageId: activeStage.stageId,
+          bundle,
+          mechanism,
+        });
+        if (!rotatingInvestigation) throw new Error('INVESTIGATION_VIEW_REJECTED');
+        availableLocations = projectAvailableLocations(bundle, authorization);
+      } else if (activeStage && investigationFlow) {
         const mandatoryClueIds = Object.values(bundle.clues)
           .filter((clue) => clue.publication.duty?.mode === 'mandatory_on_acquire')
           .map((clue) => clue.clueId);
@@ -118,6 +154,7 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
             heldClueIds: new Set(member.heldClueIds),
           }] : []),
           new Set(investigationState.searchedLocationIds),
+          investigationFlow,
         );
         availableLocations = projectAvailableLocations(bundle, authorization, {
           clueIdsByLocation: investigationCandidates.actorClueIdsByLocation,
@@ -147,7 +184,9 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
           },
           simulatedFlowRoles,
         );
-        canAdvance = currentComplete && nextCanEnter;
+        canAdvance = currentComplete
+          && nextCanEnter
+          && (!rotatingInvestigation || rotatingInvestigation.stageCompleted);
       }
     } catch {
       // Protected storage failures use the same empty projection as unavailable objects.
@@ -192,6 +231,20 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
     ? room.members.find((member) => member.membershipId === investigationState?.currentTurnMembershipId)
     : null;
   const myVote = investigationState?.votes.find((vote) => vote.membershipId === room.membershipId);
+  const rotatingLocationIds = rotatingInvestigation?.phase === 'tie_break'
+    ? rotatingInvestigation.tiedLocationIds
+    : rotatingInvestigation?.locationIds ?? [];
+  const rotatingLocations = availableLocations.filter(
+    (location) => rotatingLocationIds.includes(location.locationId),
+  );
+  const rotatingCurrentTurnMember = rotatingInvestigation?.currentTurnMembershipId
+    ? room.members.find(
+      (member) => member.membershipId === rotatingInvestigation.currentTurnMembershipId,
+    )
+    : null;
+  const availableLocationById = new Map(
+    availableLocations.map((location) => [location.locationId, location]),
+  );
 
   return (
     <main className="rooms-shell">
@@ -317,6 +370,139 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
           <p className="empty-state">少人开场后不能再补选角色，所以当前账号不会获得任何个人剧本。</p>
         </section>
       ) : null}
+      {room.status === 'running' && rotatingInvestigation
+        && (rotatingInvestigation.hasPublicationObligation
+          || rotatingInvestigation.roomActionBlockedForPublication) ? (
+        <section className="members-section investigation-obligation" role="alert">
+          <p className="eyebrow">PUBLICATION REQUIRED</p>
+          <h2>{rotatingInvestigation.hasPublicationObligation
+            ? '请先处理你的公开义务'
+            : '等待必须公开的线索处理完成'}</h2>
+          <p className="section-guidance">当前调查状态已锁定；公开完成并刷新后即可继续。</p>
+        </section>
+      ) : null}
+      {room.status === 'running' && rotatingInvestigation ? (
+        <section className="members-section location-section rotating-investigation">
+          <p className="eyebrow">SEARCH</p>
+          <h2>{rotatingInvestigation.phase === 'location_ballot'
+            ? '投票选择本轮调查地点'
+            : rotatingInvestigation.phase === 'tie_break'
+              ? '从并列地点中作出裁定'
+              : rotatingInvestigation.phase === 'blind_draw'
+                ? '轮流从背面选择线索'
+                : rotatingInvestigation.phase === 'completion_ballot'
+                  ? '确认本阶段调查完成'
+                  : '本阶段调查已完成'}</h2>
+          <p className="section-guidance">
+            {rotatingInvestigation.phase === 'location_ballot'
+              ? `当前已提交 ${rotatingInvestigation.voteCount}/${rotatingInvestigation.eligibleVoterCount} 票。`
+              : rotatingInvestigation.phase === 'tie_break'
+                ? rotatingInvestigation.tieBreakMembershipId === room.membershipId
+                  ? '本轮由你从并列地点中选择一个。'
+                  : '正在等待当前裁定玩家选择地点。'
+                : rotatingInvestigation.phase === 'blind_draw'
+                  ? rotatingInvestigation.currentTurnMembershipId === room.membershipId
+                    ? '轮到你了。页面只显示当前允许选择的线索背面。'
+                    : `正在等待${rotatingCurrentTurnMember ? ` ${rotatingCurrentTurnMember.displayName}` : '当前玩家'}选择线索。`
+                  : rotatingInvestigation.phase === 'completion_ballot'
+                    ? `当前已确认 ${rotatingInvestigation.completionVoteMembershipIds.length}/${rotatingInvestigation.completionThreshold}。`
+                    : '房主可以在满足阶段条件后继续推进。'}
+          </p>
+          {rotatingInvestigation.phase === 'location_ballot'
+            || rotatingInvestigation.phase === 'tie_break' ? (
+            <div className="investigation-vote-grid">
+              {rotatingLocations.map((location, index) => {
+                const selectable = rotatingInvestigation.voteCandidateLocationIds.includes(
+                  location.locationId,
+                );
+                return (
+                  <form
+                    action={rotatingInvestigation.phase === 'tie_break'
+                      ? `/api/rooms/${room.code}/investigation/tie-break`
+                      : `/api/rooms/${room.code}/investigation/vote`}
+                    method="post"
+                    key={location.locationId}
+                  >
+                    <input type="hidden" name="locationId" value={location.locationId} />
+                    <input
+                      type="hidden"
+                      name="authorizationVersion"
+                      value={room.authorizationVersion}
+                    />
+                    <button
+                      className={rotatingInvestigation.ownVoteLocationId === location.locationId
+                        ? 'is-selected'
+                        : ''}
+                      type="submit"
+                      disabled={!selectable}
+                    >
+                      <span>{String(index + 1).padStart(2, '0')}</span>
+                      <strong>{location.name ?? `地点 ${index + 1}`}</strong>
+                      <small>{rotatingInvestigation.phase === 'tie_break'
+                        ? selectable ? '选择这个地点' : '等待裁定'
+                        : rotatingInvestigation.ownVoteLocationId === location.locationId
+                          ? '你已选择，可在结算前改票'
+                          : selectable ? '投票选择此地点' : '当前不可选择'}</small>
+                    </button>
+                  </form>
+                );
+              })}
+            </div>
+          ) : null}
+          {rotatingInvestigation.phase === 'blind_draw' ? (
+            rotatingInvestigation.drawOptions.length ? (
+              <div className="blind-draw-grid">
+                {rotatingInvestigation.drawOptions.map((option, index) => (
+                  <article className="blind-draw-card" key={option.clueId}>
+                    <header>
+                      <span>{String(index + 1).padStart(2, '0')}</span>
+                      <strong>{availableLocationById.get(option.locationId)?.name ?? '调查地点'}</strong>
+                    </header>
+                    <div className="blind-draw-back">
+                      {option.content.map((content, contentIndex) => (
+                        <ProtectedContent
+                          key={`${option.faceId}-${contentIndex}`}
+                          code={room.code}
+                          content={content}
+                        />
+                      ))}
+                    </div>
+                    <form action={`/api/rooms/${room.code}/search`} method="post">
+                      <input type="hidden" name="locationId" value={option.locationId} />
+                      <input type="hidden" name="clueId" value={option.clueId} />
+                      <input
+                        type="hidden"
+                        name="authorizationVersion"
+                        value={room.authorizationVersion}
+                      />
+                      <button type="submit">取得这张线索</button>
+                    </form>
+                  </article>
+                ))}
+              </div>
+            ) : <p className="empty-state">等待当前玩家完成选择后刷新状态。</p>
+          ) : null}
+          {rotatingInvestigation.phase === 'completion_ballot' ? (
+            <form action={`/api/rooms/${room.code}/investigation/complete`} method="post">
+              <input
+                type="hidden"
+                name="authorizationVersion"
+                value={room.authorizationVersion}
+              />
+              <button
+                type="submit"
+                disabled={rotatingInvestigation.hasPublicationObligation
+                  || rotatingInvestigation.roomActionBlockedForPublication
+                  || rotatingInvestigation.completionVoteMembershipIds.includes(room.membershipId)}
+              >
+                {rotatingInvestigation.completionVoteMembershipIds.includes(room.membershipId)
+                  ? '已确认，等待达到人数'
+                  : '确认本阶段调查完成'}
+              </button>
+            </form>
+          ) : null}
+        </section>
+      ) : null}
       {room.status === 'running' && investigationFlow && investigationState?.hasPublicationObligation ? (
         <section className="members-section investigation-obligation" role="alert">
           <p className="eyebrow">PUBLICATION REQUIRED</p>
@@ -324,7 +510,7 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
           <p className="section-guidance">按照游戏说明，你需要从自己的未公开线索中公开一张，{publicationBlockMessage}</p>
         </section>
       ) : null}
-      {room.status === 'running' && investigationLocations.length ? (
+      {room.status === 'running' && !rotatingInvestigation && investigationLocations.length ? (
         <section className="members-section location-section">
           <p className="eyebrow">SEARCH</p>
           <h2>{investigationFlow
@@ -473,29 +659,38 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
       ) : null}
       {isOwner && room.versionId && room.status === 'lobby' && packRoleCount > 0
         && assignedRoleIds.size > 0 && assignedRoleIds.size < packRoleCount ? (
-        <section className="members-section force-start-section">
-          <p className="eyebrow">TEST OVERRIDE</p>
-          <h2>还差 {packRoleCount - assignedRoleIds.size} 个席位</h2>
-          <p className="empty-state">
-            正常开场需要所有席位锁定。测试时可以少人开场，但空缺角色不会分配给任何人，
-            开场后也不能补选；这只适合页面和权限功能测试，部分剧情流程可能无法继续。
-          </p>
-          <details className="force-start-confirmation">
-            <summary>查看少人开场选项</summary>
-            <div>
-              <strong>这是第二次确认</strong>
-              <p>只有当前已认领角色的玩家会获得对应内容；空缺角色内容仍保持不可见。</p>
-              <form action={`/api/rooms/${room.code}/start`} method="post">
-                <input type="hidden" name="forceStart" value="confirmed" />
-                <label>
-                  <input type="checkbox" name="confirmConsequences" value="yes" required />
-                  我知道开场后不能补选空缺角色，且部分剧情流程可能无法继续。
-                </label>
-                <button type="submit">确认少人开场</button>
-              </form>
-            </div>
-          </details>
-        </section>
+        fullRoleAssignmentRequired ? (
+          <section className="members-section force-start-section">
+            <p className="eyebrow">ALL ROLES REQUIRED</p>
+            <h2>还差 {packRoleCount - assignedRoleIds.size} 个席位</h2>
+            <p className="empty-state">本局机制要求所有席位锁定后才能开场，少人开场不可用。</p>
+            <button type="button" disabled>等待全部席位锁定</button>
+          </section>
+        ) : (
+          <section className="members-section force-start-section">
+            <p className="eyebrow">TEST OVERRIDE</p>
+            <h2>还差 {packRoleCount - assignedRoleIds.size} 个席位</h2>
+            <p className="empty-state">
+              正常开场需要所有席位锁定。测试时可以少人开场，但空缺角色不会分配给任何人，
+              开场后也不能补选；这只适合页面和权限功能测试，部分剧情流程可能无法继续。
+            </p>
+            <details className="force-start-confirmation">
+              <summary>查看少人开场选项</summary>
+              <div>
+                <strong>这是第二次确认</strong>
+                <p>只有当前已认领角色的玩家会获得对应内容；空缺角色内容仍保持不可见。</p>
+                <form action={`/api/rooms/${room.code}/start`} method="post">
+                  <input type="hidden" name="forceStart" value="confirmed" />
+                  <label>
+                    <input type="checkbox" name="confirmConsequences" value="yes" required />
+                    我知道开场后不能补选空缺角色，且部分剧情流程可能无法继续。
+                  </label>
+                  <button type="submit">确认少人开场</button>
+                </form>
+              </div>
+            </details>
+          </section>
+        )
       ) : null}
       {isOwner && room.versionId && room.status === 'lobby' && packRoleCount > 0
         && assignedRoleIds.size === 0 ? (

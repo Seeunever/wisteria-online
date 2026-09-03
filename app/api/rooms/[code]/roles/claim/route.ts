@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUser } from '@/lib/auth';
-import { loadFrozenBundle } from '@/lib/packs';
+import { loadInstalledPack } from '@/lib/packs';
 import { claimRole, getRoomForMember } from '@/lib/rooms';
 import { assertSameOrigin } from '@/lib/security';
 
@@ -19,7 +19,7 @@ export async function POST(
     const form = await request.formData();
     const roleId = form.get('roleId');
     if (typeof roleId !== 'string') throw new Error('ROLE_CLAIM_REJECTED');
-    const bundle = loadFrozenBundle(room.versionId);
+    const { bundle } = loadInstalledPack(room.versionId);
     if (!Object.hasOwn(bundle.roles, roleId) || !claimRole(code, user.id, roleId)) {
       throw new Error('ROLE_CLAIM_REJECTED');
     }

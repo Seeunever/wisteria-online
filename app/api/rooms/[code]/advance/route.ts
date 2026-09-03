@@ -5,7 +5,9 @@ import {
   withEligibleHostReleases,
   type AuthorizationContext,
 } from '@/lib/blind-runtime';
-import { loadFrozenBundle } from '@/lib/packs';
+import { getRotatingBlindDrawRoomView } from '@/lib/investigation/rotating-blind-draw-room';
+import { isRotatingBlindDrawMechanism } from '@/lib/investigation/rotating-blind-draw';
+import { loadInstalledPack } from '@/lib/packs';
 import { advanceRoom, getRoomForMember } from '@/lib/rooms';
 import { assertSameOrigin } from '@/lib/security';
 
@@ -24,9 +26,24 @@ export async function POST(
     if (
       !room?.versionId || !active || room.ownerUserId !== user.id || room.status !== 'running'
     ) throw new Error('ADVANCE_REJECTED');
-    const bundle = loadFrozenBundle(room.versionId);
+    const { bundle, runtimePolicy } = loadInstalledPack(room.versionId);
     const currentStage = bundle.stages[active.stageId];
     if (!currentStage) throw new Error('ADVANCE_REJECTED');
+    const mechanism = runtimePolicy.stageMechanisms[active.stageId];
+    if (currentStage.allowedActions.includes('search') && !mechanism) {
+      throw new Error('ADVANCE_REJECTED');
+    }
+    if (isRotatingBlindDrawMechanism(mechanism)) {
+      const investigation = getRotatingBlindDrawRoomView({
+        code: room.code,
+        userId: user.id,
+        versionId: room.versionId,
+        stageId: active.stageId,
+        bundle,
+        mechanism,
+      });
+      if (!investigation?.stageCompleted) throw new Error('ADVANCE_REJECTED');
+    }
     const context: AuthorizationContext = {
       joined: true,
       assignedRoleId: room.assignedRoleId,

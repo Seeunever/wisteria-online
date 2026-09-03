@@ -66,10 +66,11 @@ pnpm run build
 | `lib/identity.ts` | 用户名与设备凭据绑定 |
 | `lib/rooms.ts` | 房间状态和需要事务保护的游戏操作 |
 | `lib/blind-runtime.ts` | 根据当前身份与阶段生成最小授权投影 |
-| `lib/packs.ts` | 读取冻结剧本版本和受保护内容源 |
+| `lib/packs.ts` | 校验并读取冻结剧本、运行策略和受保护内容源 |
+| `lib/investigation/` | 解析并执行按版本绑定的服务端运行策略 |
+| `lib/render-manifest.ts` | 校验按版本绑定的私有页面渲染清单 |
 | `lib/db.ts` | SQLite 路径、表结构和连接 |
 | `scripts/` | 剧本包安装、数据库备份和运行时测试 |
-| `.agents/skills/blind-player/` | 无剧透导入、运行和发布安全规则 |
 | `deploy/` | systemd、Nginx 和备份配置模板 |
 
 ## 核心玩家路径
@@ -115,7 +116,30 @@ pnpm run build
 - 受保护响应保持 `Cache-Control: private, no-store`。
 - 部署与剧本包安装是两个独立授权步骤。
 
-涉及剧本内容或发布前检查时，先阅读 `.agents/skills/blind-player/SKILL.md` 及其指定的相关参考文件。
+原始资料处理、内容复核和发布前权限矩阵必须在仓库外的受控私密流程中完成；公开仓库不内置或复制内容处理技能，也不保存其私有产物。
+
+## 每包运行策略与本地安装
+
+应用代码只提供通用房间能力。每个冻结版本的 canonical bundle、runtime policy 与 render manifest 都保存在服务端私有数据区，剧本专属规则、原始内容和渲染页不进入源码、静态资源或浏览器包。
+
+- 已安装版本必须在追加式注册表中绑定明确的运行配置。新安装使用经过验证的私有 sidecar；既有版本只有被明确登记时才允许使用 canonical 或兼容模式，不根据 bundle 内容猜测或自动回退。
+- sidecar 使用版本化、可确定序列化的结构，并同时绑定冻结版本、canonical payload hash、自身语义 hash 和安装文件字节 hash。结构错误、未知 kind / version、引用越界或任一绑定不一致都会拒绝加载。
+- render manifest 只登记 canonical 图片内容实际引用的页面，并绑定每个私有 WebP 的固定路径、尺寸、字节数和哈希。缺页、多页、错尺寸、替换文件或目录越界都会拒绝安装或读取。
+- runtime policy 是 canonical 权限的收窄层，不是第二套授权来源。实际可执行动作、可见对象和可读内容始终取 canonical 投影与运行策略限制的交集。
+- 受保护请求每次都由服务端根据当前房间、版本、阶段、成员、角色、持有状态、公开账本和授权版本重新计算。状态变更在事务内复核这些条件，并拒绝过期或不完整的请求。
+
+本地安装只接受仓库外新建、已经通过 canonical 校验的私有运行根目录。先生成并验证与冻结 bundle 绑定的 runtime policy 证明，再执行追加安装：
+
+```powershell
+pnpm run validate:runtime-policy -- --run-root PRIVATE_RUN_ROOT --canonical-validator-python ABSOLUTE_PYTHON_EXECUTABLE --canonical-validator-script ABSOLUTE_VALIDATE_BUNDLE_SCRIPT
+pnpm run test:runtime-policy
+pnpm run install:pack -- --run-root PRIVATE_RUN_ROOT --data-dir LOCAL_DATA_DIR --label SAFE_PUBLIC_LABEL --canonical-validator-python ABSOLUTE_PYTHON_EXECUTABLE --canonical-validator-script ABSOLUTE_VALIDATE_BUNDLE_SCRIPT
+pnpm run test:runtime
+```
+
+两个入口都会使用显式指定的受信 Python 与校验脚本，独立执行一次现有 canonical 产物的完整复验；二者必须是私有运行根和安装数据根之外的绝对普通文件路径。证明只绑定校验脚本的字节哈希，不记录解释器或脚本的本机路径。
+
+校验器和安装器只应输出固定状态码；失败时不得改写已有版本。安装成功也不代表已经发布，生产部署与实际包多身份权限矩阵仍是独立关卡。
 
 ## 跨电脑协作规则
 

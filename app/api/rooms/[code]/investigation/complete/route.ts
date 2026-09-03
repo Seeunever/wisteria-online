@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUser } from '@/lib/auth';
-import { deriveInvestigationCandidates, type AuthorizationContext } from '@/lib/blind-runtime';
-import { loadFrozenBundle } from '@/lib/packs';
+import {
+  deriveInvestigationCandidates,
+  type AuthorizationContext,
+  type CollectiveVoteRoundRobinFlowV1,
+} from '@/lib/blind-runtime';
+import { voteRotatingBlindDrawCompletion } from '@/lib/investigation/rotating-blind-draw-room';
+import { isRotatingBlindDrawMechanism } from '@/lib/investigation/rotating-blind-draw';
+import { loadInstalledPack } from '@/lib/packs';
 import {
   getInvestigationState,
   getRoomForMember,
@@ -27,9 +33,25 @@ export async function POST(
     const form = await request.formData();
     const authorizationVersion = Number(form.get('authorizationVersion'));
     if (authorizationVersion !== room.authorizationVersion) throw new Error('COMPLETION_REJECTED');
-    const bundle = loadFrozenBundle(room.versionId);
+    const { bundle, runtimePolicy } = loadInstalledPack(room.versionId);
     const stage = bundle.stages[activeStageId];
-    const flow = stage?.investigationFlow;
+    const mechanism = runtimePolicy.stageMechanisms[activeStageId];
+    if (!stage || !mechanism) throw new Error('COMPLETION_REJECTED');
+    if (isRotatingBlindDrawMechanism(mechanism)) {
+      if (!voteRotatingBlindDrawCompletion({
+        code: room.code,
+        userId: user.id,
+        versionId: room.versionId,
+        authorizationVersion,
+        stageId: activeStageId,
+        bundle,
+        mechanism,
+      })) throw new Error('COMPLETION_REJECTED');
+      return NextResponse.redirect(new URL(`/rooms/${code}`, origin), 303);
+    }
+    const flow = mechanism.kind === 'collective_vote_round_robin' && mechanism.version === 1
+      ? mechanism as CollectiveVoteRoundRobinFlowV1
+      : null;
     if (!flow?.completion || flow.completion.exhaustive !== 'per_player_quota') {
       throw new Error('COMPLETION_REJECTED');
     }
@@ -72,6 +94,7 @@ export async function POST(
         heldClueIds: new Set(member.heldClueIds),
       }] : []),
       new Set(state.searchedLocationIds),
+      flow,
     );
     const orderedMembershipIds = Object.values(bundle.roles)
       .sort((left, right) => left.slot - right.slot)

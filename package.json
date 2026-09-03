@@ -10,7 +10,9 @@
     "build": "next build && node scripts/prepare-standalone.mjs",
     "start": "next start",
     "lint": "eslint . --ignore-pattern .next",
-    "test:runtime": "node --test scripts/test-auth.ts scripts/test-blind-runtime.ts scripts/test-room-pack.ts scripts/test-security.ts",
+    "test:runtime": "node --test scripts/test-auth.ts scripts/test-blind-runtime.ts scripts/test-clue-face-navigation.ts scripts/test-room-pack.ts scripts/test-rotating-blind-draw.ts scripts/test-rotating-blind-draw-room.ts scripts/test-rotating-runtime-policy.ts scripts/test-runtime-policy.ts scripts/test-search-policy-window.ts scripts/test-security.ts",
+    "test:runtime-policy": "node --experimental-loader ./scripts/server-only-test-loader.mjs --experimental-transform-types --test scripts/test-runtime-policy.ts scripts/test-render-manifest.ts scripts/test-pack-runtime-policy.ts scripts/test-pack-installer.ts scripts/test-render-byte-integrity.ts scripts/test-rotating-runtime-policy.ts",
+    "validate:runtime-policy": "node scripts/validate-runtime-policy.ts",
     "install:pack": "node scripts/install-validated-pack.mjs"
   },
   "dependencies": {

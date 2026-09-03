@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUser } from '@/lib/auth';
 import { evaluateViewerCondition, type AuthorizationContext } from '@/lib/blind-runtime';
-import { loadFrozenBundle } from '@/lib/packs';
+import { loadInstalledPack } from '@/lib/packs';
 import { getRoomForMember, publishHeldClue } from '@/lib/rooms';
 import { assertSameOrigin } from '@/lib/security';
 
@@ -22,7 +22,7 @@ export async function POST(
     const form = await request.formData();
     const clueId = form.get('clueId');
     if (typeof clueId !== 'string') throw new Error('PUBLISH_REJECTED');
-    const bundle = loadFrozenBundle(room.versionId);
+    const { bundle } = loadInstalledPack(room.versionId);
     const clue = bundle.clues[clueId];
     const activeStageId = room.reachedStages.find((stage) => stage.completedAt === null)?.stageId ?? null;
     const context: AuthorizationContext = {

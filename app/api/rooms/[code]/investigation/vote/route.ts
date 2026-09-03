@@ -3,8 +3,11 @@ import { getRequestUser } from '@/lib/auth';
 import {
   deriveInvestigationCandidates,
   type AuthorizationContext,
+  type CollectiveVoteRoundRobinFlowV1,
 } from '@/lib/blind-runtime';
-import { loadFrozenBundle } from '@/lib/packs';
+import { castRotatingBlindDrawLocationVote } from '@/lib/investigation/rotating-blind-draw-room';
+import { isRotatingBlindDrawMechanism } from '@/lib/investigation/rotating-blind-draw';
+import { loadInstalledPack } from '@/lib/packs';
 import { getInvestigationState, getRoomForMember, voteInvestigationLocation } from '@/lib/rooms';
 import { assertSameOrigin } from '@/lib/security';
 
@@ -29,12 +32,29 @@ export async function POST(
     if (typeof locationId !== 'string' || authorizationVersion !== room.authorizationVersion) {
       throw new Error('VOTE_REJECTED');
     }
-    const bundle = loadFrozenBundle(room.versionId);
+    const { bundle, runtimePolicy } = loadInstalledPack(room.versionId);
     const stage = bundle.stages[activeStageId];
-    const flow = stage?.investigationFlow;
-    if (!flow || !stage.allowedActions.includes('search') || !stage.locationIds.includes(locationId)) {
+    const mechanism = runtimePolicy.stageMechanisms[activeStageId];
+    if (!stage || !mechanism || !stage.allowedActions.includes('search') || !stage.locationIds.includes(locationId)) {
       throw new Error('VOTE_REJECTED');
     }
+    if (isRotatingBlindDrawMechanism(mechanism)) {
+      if (!castRotatingBlindDrawLocationVote({
+        code: room.code,
+        userId: user.id,
+        versionId: room.versionId,
+        authorizationVersion,
+        stageId: activeStageId,
+        locationId,
+        bundle,
+        mechanism,
+      })) throw new Error('VOTE_REJECTED');
+      return NextResponse.redirect(new URL(`/rooms/${code}`, origin), 303);
+    }
+    const flow = mechanism.kind === 'collective_vote_round_robin' && mechanism.version === 1
+      ? mechanism as CollectiveVoteRoundRobinFlowV1
+      : null;
+    if (!flow) throw new Error('VOTE_REJECTED');
     const authorization: AuthorizationContext = {
       joined: true,
       assignedRoleId: room.assignedRoleId,
@@ -77,6 +97,7 @@ export async function POST(
         heldClueIds: new Set(member.heldClueIds),
       }] : []),
       new Set(state.searchedLocationIds),
+      flow,
     );
     if (!voteInvestigationLocation({
       code: room.code,

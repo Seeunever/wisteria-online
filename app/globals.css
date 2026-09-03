@@ -302,6 +302,15 @@ footer p { color: #7e7066; font-size: .68rem; }
 .clue-choice-grid button > small { color: var(--muted); font-size: .65rem; }
 .clue-choice-grid button:hover { border-color: var(--gold); background: rgb(201 170 107 / 12%); }
 .clue-choice-grid > .empty-state { grid-column: 1 / -1; margin: 0; }
+.blind-draw-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+.blind-draw-card { display: grid; min-width: 0; gap: 1rem; align-content: start; padding: 1rem; border: 1px solid rgb(201 170 107 / 38%); border-radius: .9rem; background: linear-gradient(145deg, rgb(201 170 107 / 8%), rgb(121 85 163 / 7%)); }
+.blind-draw-card > header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; color: var(--muted); font-size: .72rem; }
+.blind-draw-card > header span { color: var(--gold); font-family: monospace; }
+.blind-draw-back { overflow: hidden; min-height: 10rem; border: 1px solid var(--line); border-radius: .7rem; background: rgb(7 5 12 / 55%); }
+.blind-draw-back p { margin: 0; padding: 1rem; white-space: pre-wrap; line-height: 1.7; }
+.blind-draw-back .protected-scan { display: block; width: 100%; height: auto; }
+.blind-draw-card form { margin: 0; }
+.blind-draw-card button { width: 100%; min-height: 48px; }
 .clue-index-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .7rem; margin-top: 1.4rem; }
 .clue-index-card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .45rem .8rem; padding: 1rem; border: 1px solid var(--line); border-radius: .75rem; background: rgb(255 255 255 / 2%); }
 .clue-index-card:hover { border-color: rgb(201 170 107 / 46%); }
@@ -327,6 +336,15 @@ footer p { color: #7e7066; font-size: .68rem; }
 .clue-visibility { margin: 1rem 0 0; color: var(--muted); line-height: 1.75; }
 .clue-content-card { margin-top: 2rem; padding: clamp(1rem, 3vw, 1.6rem); border: 1px solid var(--line); border-radius: 1rem; background: rgb(255 255 255 / 3%); }
 .clue-content-card p { white-space: pre-wrap; line-height: 1.8; }
+.clue-face-reader { display: grid; gap: 1rem; }
+.clue-face-status { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0; color: var(--gold); font-size: .72rem; letter-spacing: .12em; }
+.clue-face-status > span { color: var(--muted); font-family: monospace; letter-spacing: .04em; }
+.clue-face-content { min-width: 0; }
+.clue-face-content > :first-child { margin-top: 0; }
+.clue-face-content > :last-child { margin-bottom: 0; }
+.clue-face-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.clue-face-controls button { min-height: 48px; padding: .7rem 1rem; border: 1px solid var(--gold); border-radius: .65rem; color: #171216; background: var(--gold); cursor: pointer; font-weight: 800; }
+.clue-face-controls button:first-child:not(:last-child) { color: var(--ink); background: rgb(255 255 255 / 3%); }
 .clue-decision-bar { position: sticky; bottom: 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: 1rem; padding: .75rem; border: 1px solid var(--line); border-radius: .9rem; background: rgb(18 13 27 / 90%); box-shadow: 0 1rem 3rem rgb(0 0 0 / 34%); backdrop-filter: blur(16px); }
 .clue-decision-bar form { display: block; margin: 0; }
 .clue-decision-bar a, .clue-decision-bar button { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: center; border-radius: .65rem; font-weight: 800; }
@@ -407,6 +425,8 @@ footer p { color: #7e7066; font-size: .68rem; }
   .clue-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: .75rem; }
   .clue-choice-grid button { min-height: 8rem; }
   .clue-index-list { grid-template-columns: 1fr; }
+  .clue-face-controls { grid-template-columns: 1fr; }
+  .clue-face-controls > span[aria-hidden='true'] { display: none; }
   .clue-decision-bar { grid-template-columns: 1fr; }
   .room-quick-dock { right: .6rem; bottom: max(.6rem, env(safe-area-inset-bottom)); left: .6rem; justify-content: stretch; border-radius: .9rem; }
   .room-quick-dock a { flex: 1; padding: 0 .7rem; }

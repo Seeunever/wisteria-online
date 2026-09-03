@@ -2,6 +2,91 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { getDatabase } from './db.ts';
 
 const ROOM_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+const COMPLETE_RUNTIME_PROFILE_SQL = `
+  length(pack_versions.source_hash) = 71
+  AND substr(pack_versions.source_hash, 1, 7) = 'sha256:'
+  AND substr(pack_versions.source_hash, 8) NOT GLOB '*[^0-9a-f]*'
+  AND profiles.canonical_payload_hash = pack_versions.source_hash
+  AND (
+    (
+      profiles.mode = 'legacy_embedded'
+      AND profiles.policy_schema IS NULL
+      AND profiles.policy_path IS NULL
+      AND profiles.policy_payload_hash IS NULL
+      AND profiles.runtime_policy_hash IS NULL
+      AND (
+        profiles.bundle_payload_hash IS NULL
+        OR (
+          length(profiles.bundle_payload_hash) = 71
+          AND substr(profiles.bundle_payload_hash, 1, 7) = 'sha256:'
+          AND substr(profiles.bundle_payload_hash, 8) NOT GLOB '*[^0-9a-f]*'
+        )
+      )
+    )
+    OR (
+      profiles.mode = 'canonical'
+      AND pack_versions.payload_path = 'packs/' || pack_versions.id || '/bundle.internal.json'
+      AND length(profiles.bundle_payload_hash) = 71
+      AND substr(profiles.bundle_payload_hash, 1, 7) = 'sha256:'
+      AND substr(profiles.bundle_payload_hash, 8) NOT GLOB '*[^0-9a-f]*'
+      AND profiles.policy_schema IS NULL
+      AND profiles.policy_path IS NULL
+      AND profiles.policy_payload_hash IS NULL
+      AND profiles.runtime_policy_hash IS NULL
+    )
+    OR (
+      profiles.mode = 'sidecar'
+      AND pack_versions.payload_path = 'packs/' || pack_versions.id || '/bundle.internal.json'
+      AND length(profiles.bundle_payload_hash) = 71
+      AND substr(profiles.bundle_payload_hash, 1, 7) = 'sha256:'
+      AND substr(profiles.bundle_payload_hash, 8) NOT GLOB '*[^0-9a-f]*'
+      AND profiles.policy_schema = 'wisteria-runtime-policy/1.0'
+      AND profiles.policy_path = 'packs/' || pack_versions.id || '/runtime-policy.internal.json'
+      AND length(profiles.policy_payload_hash) = 71
+      AND substr(profiles.policy_payload_hash, 1, 7) = 'sha256:'
+      AND substr(profiles.policy_payload_hash, 8) NOT GLOB '*[^0-9a-f]*'
+      AND length(profiles.runtime_policy_hash) = 71
+      AND substr(profiles.runtime_policy_hash, 1, 7) = 'sha256:'
+      AND substr(profiles.runtime_policy_hash, 8) NOT GLOB '*[^0-9a-f]*'
+    )
+  )
+`;
+const COMPLETE_RENDER_PROFILE_SQL = `
+  render_profiles.canonical_payload_hash = pack_versions.source_hash
+  AND (
+    (
+      render_profiles.mode = 'legacy_embedded'
+      AND render_profiles.manifest_schema IS NULL
+      AND render_profiles.manifest_path IS NULL
+      AND render_profiles.manifest_payload_hash IS NULL
+      AND render_profiles.render_manifest_hash IS NULL
+      AND (
+        render_profiles.bundle_payload_hash IS NULL
+        OR (
+          length(render_profiles.bundle_payload_hash) = 71
+          AND substr(render_profiles.bundle_payload_hash, 1, 7) = 'sha256:'
+          AND substr(render_profiles.bundle_payload_hash, 8) NOT GLOB '*[^0-9a-f]*'
+        )
+      )
+    )
+    OR (
+      render_profiles.mode = 'manifest'
+      AND pack_versions.payload_path = 'packs/' || pack_versions.id || '/bundle.internal.json'
+      AND length(render_profiles.bundle_payload_hash) = 71
+      AND substr(render_profiles.bundle_payload_hash, 1, 7) = 'sha256:'
+      AND substr(render_profiles.bundle_payload_hash, 8) NOT GLOB '*[^0-9a-f]*'
+      AND render_profiles.manifest_schema = 'wisteria-render-manifest/1.0'
+      AND render_profiles.manifest_path =
+        'packs/' || pack_versions.id || '/render-manifest.internal.json'
+      AND length(render_profiles.manifest_payload_hash) = 71
+      AND substr(render_profiles.manifest_payload_hash, 1, 7) = 'sha256:'
+      AND substr(render_profiles.manifest_payload_hash, 8) NOT GLOB '*[^0-9a-f]*'
+      AND length(render_profiles.render_manifest_hash) = 71
+      AND substr(render_profiles.render_manifest_hash, 1, 7) = 'sha256:'
+      AND substr(render_profiles.render_manifest_hash, 8) NOT GLOB '*[^0-9a-f]*'
+    )
+  )
+`;
 
 function newRoomCode() {
   const bytes = randomBytes(6);
@@ -22,7 +107,13 @@ export function createRoom(ownerUserId: string, versionId?: string) {
           INSERT INTO rooms (id, code, owner_user_id, version_id, status, created_at)
           SELECT ?, ?, ?, id, 'lobby', ?
           FROM pack_versions
-          WHERE id = ? AND state = 'frozen'
+          JOIN pack_runtime_profiles profiles ON profiles.version_id = pack_versions.id
+          JOIN pack_render_profiles render_profiles
+            ON render_profiles.version_id = pack_versions.id
+          WHERE pack_versions.id = ?
+            AND pack_versions.state = 'frozen'
+            AND (${COMPLETE_RUNTIME_PROFILE_SQL})
+            AND (${COMPLETE_RENDER_PROFILE_SQL})
         `).run(id, code, ownerUserId, now, versionId);
         if (inserted.changes !== 1) {
           database.exec('ROLLBACK');
@@ -890,8 +981,15 @@ export function attachFrozenPackToRoom(codeInput: string, ownerUserId: string, v
         AND status = 'lobby'
         AND version_id IS NULL
         AND EXISTS (
-          SELECT 1 FROM pack_versions
-          WHERE pack_versions.id = ? AND pack_versions.state = 'frozen'
+          SELECT 1
+          FROM pack_versions
+          JOIN pack_runtime_profiles profiles ON profiles.version_id = pack_versions.id
+          JOIN pack_render_profiles render_profiles
+            ON render_profiles.version_id = pack_versions.id
+          WHERE pack_versions.id = ?
+            AND pack_versions.state = 'frozen'
+            AND (${COMPLETE_RUNTIME_PROFILE_SQL})
+            AND (${COMPLETE_RENDER_PROFILE_SQL})
         )
     `).run(versionId, code, ownerUserId, versionId);
     if (result.changes !== 1) {
@@ -1039,11 +1137,13 @@ export function searchLocation(input: {
   code: string;
   userId: string;
   versionId: string;
+  authorizationVersion: number;
   locationId: string;
   stageId: string;
+  usageStageIds: string[];
   selectedClueId: string;
   eligibleClueIds: string[];
-  mode: 'draw_without_replacement' | 'fixed_sequence' | 'all_visible' | 'host_dealt';
+  mode: 'draw_without_replacement' | 'fixed_sequence' | 'all_visible';
   perPlayerLimit: number | null;
   globalLimit: number | null;
 }) {
@@ -1052,7 +1152,13 @@ export function searchLocation(input: {
     || !/^ver_[0-9a-f]{8,64}$/.test(input.versionId)
     || !/^loc_[0-9a-f]{8,64}$/.test(input.locationId)
     || !/^stage_[0-9a-f]{8,64}$/.test(input.stageId)
+    || input.usageStageIds.length === 0
+    || !input.usageStageIds.includes(input.stageId)
+    || input.usageStageIds.some((id) => !/^stage_[0-9a-f]{8,64}$/.test(id))
+    || new Set(input.usageStageIds).size !== input.usageStageIds.length
     || !/^clue_[0-9a-f]{8,64}$/.test(input.selectedClueId)
+    || !Number.isInteger(input.authorizationVersion)
+    || input.authorizationVersion < 1
     || input.eligibleClueIds.length === 0
     || input.eligibleClueIds.some((id) => !/^clue_[0-9a-f]{8,64}$/.test(id))
     || new Set(input.eligibleClueIds).size !== input.eligibleClueIds.length
@@ -1075,8 +1181,15 @@ export function searchLocation(input: {
       JOIN room_stages ON room_stages.room_id = rooms.id
         AND room_stages.stage_id = ? AND room_stages.completed_at IS NULL
       WHERE rooms.code = ? AND rooms.version_id = ? AND rooms.status = 'running'
+        AND rooms.authorization_version = ?
         AND memberships.user_id = ? AND memberships.left_at IS NULL
-    `).get(input.stageId, input.code, input.versionId, input.userId) as {
+    `).get(
+      input.stageId,
+      input.code,
+      input.versionId,
+      input.authorizationVersion,
+      input.userId,
+    ) as {
       roomId: string;
       membershipId: string;
     } | undefined;
@@ -1085,18 +1198,44 @@ export function searchLocation(input: {
       return false;
     }
 
+    const stagePlaceholders = input.usageStageIds.map(() => '?').join(', ');
+    const personalUses = (database.prepare(`
+      SELECT COALESCE(SUM(uses), 0) AS uses
+      FROM search_uses
+      WHERE room_id = ? AND location_id = ? AND membership_id = ?
+        AND stage_id IN (${stagePlaceholders})
+    `).get(
+      state.roomId,
+      input.locationId,
+      state.membershipId,
+      ...input.usageStageIds,
+    ) as { uses: number }).uses;
+    const globalUses = (database.prepare(`
+      SELECT COALESCE(SUM(uses), 0) AS uses
+      FROM location_search_totals
+      WHERE room_id = ? AND location_id = ?
+        AND stage_id IN (${stagePlaceholders})
+    `).get(
+      state.roomId,
+      input.locationId,
+      ...input.usageStageIds,
+    ) as { uses: number }).uses;
+    if (personalUses >= perPlayerLimit || globalUses >= globalLimit) {
+      database.exec('ROLLBACK');
+      return false;
+    }
     const personal = database.prepare(`
       INSERT INTO search_uses (room_id, location_id, stage_id, membership_id, uses)
       VALUES (?, ?, ?, ?, 1)
       ON CONFLICT(room_id, location_id, stage_id, membership_id)
-      DO UPDATE SET uses = uses + 1 WHERE uses < ?
-    `).run(state.roomId, input.locationId, input.stageId, state.membershipId, perPlayerLimit);
+      DO UPDATE SET uses = uses + 1
+    `).run(state.roomId, input.locationId, input.stageId, state.membershipId);
     const global = database.prepare(`
       INSERT INTO location_search_totals (room_id, location_id, stage_id, uses)
       VALUES (?, ?, ?, 1)
       ON CONFLICT(room_id, location_id, stage_id)
-      DO UPDATE SET uses = uses + 1 WHERE uses < ?
-    `).run(state.roomId, input.locationId, input.stageId, globalLimit);
+      DO UPDATE SET uses = uses + 1
+    `).run(state.roomId, input.locationId, input.stageId);
     if (personal.changes !== 1 || global.changes !== 1) {
       database.exec('ROLLBACK');
       return false;
@@ -1121,9 +1260,14 @@ export function searchLocation(input: {
       INSERT INTO clue_holdings (room_id, clue_id, holder_membership_id, acquired_at)
       VALUES (?, ?, ?, ?)
     `).run(state.roomId, clueId, state.membershipId, Date.now());
-    database.prepare(`
-      UPDATE rooms SET authorization_version = authorization_version + 1 WHERE id = ?
-    `).run(state.roomId);
+    const authorizationUpdate = database.prepare(`
+      UPDATE rooms SET authorization_version = authorization_version + 1
+      WHERE id = ? AND authorization_version = ?
+    `).run(state.roomId, input.authorizationVersion);
+    if (authorizationUpdate.changes !== 1) {
+      database.exec('ROLLBACK');
+      return false;
+    }
     database.exec('COMMIT');
     return true;
   } catch {
@@ -1139,6 +1283,7 @@ export function dealLocationClue(input: {
   authorizationVersion: number;
   locationId: string;
   stageId: string;
+  usageStageIds: string[];
   targetMembershipId: string;
   eligibleClueIds: string[];
   perPlayerLimit: number | null;
@@ -1149,6 +1294,10 @@ export function dealLocationClue(input: {
     || !/^ver_[0-9a-f]{8,64}$/.test(input.versionId)
     || !/^loc_[0-9a-f]{8,64}$/.test(input.locationId)
     || !/^stage_[0-9a-f]{8,64}$/.test(input.stageId)
+    || input.usageStageIds.length === 0
+    || !input.usageStageIds.includes(input.stageId)
+    || input.usageStageIds.some((id) => !/^stage_[0-9a-f]{8,64}$/.test(id))
+    || new Set(input.usageStageIds).size !== input.usageStageIds.length
     || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
       input.targetMembershipId,
     )
@@ -1197,18 +1346,44 @@ export function dealLocationClue(input: {
       database.exec('ROLLBACK');
       return false;
     }
+    const stagePlaceholders = input.usageStageIds.map(() => '?').join(', ');
+    const personalUses = (database.prepare(`
+      SELECT COALESCE(SUM(uses), 0) AS uses
+      FROM search_uses
+      WHERE room_id = ? AND location_id = ? AND membership_id = ?
+        AND stage_id IN (${stagePlaceholders})
+    `).get(
+      state.roomId,
+      input.locationId,
+      target.id,
+      ...input.usageStageIds,
+    ) as { uses: number }).uses;
+    const globalUses = (database.prepare(`
+      SELECT COALESCE(SUM(uses), 0) AS uses
+      FROM location_search_totals
+      WHERE room_id = ? AND location_id = ?
+        AND stage_id IN (${stagePlaceholders})
+    `).get(
+      state.roomId,
+      input.locationId,
+      ...input.usageStageIds,
+    ) as { uses: number }).uses;
+    if (personalUses >= perPlayerLimit || globalUses >= globalLimit) {
+      database.exec('ROLLBACK');
+      return false;
+    }
     const personal = database.prepare(`
       INSERT INTO search_uses (room_id, location_id, stage_id, membership_id, uses)
       VALUES (?, ?, ?, ?, 1)
       ON CONFLICT(room_id, location_id, stage_id, membership_id)
-      DO UPDATE SET uses = uses + 1 WHERE uses < ?
-    `).run(state.roomId, input.locationId, input.stageId, target.id, perPlayerLimit);
+      DO UPDATE SET uses = uses + 1
+    `).run(state.roomId, input.locationId, input.stageId, target.id);
     const global = database.prepare(`
       INSERT INTO location_search_totals (room_id, location_id, stage_id, uses)
       VALUES (?, ?, ?, 1)
       ON CONFLICT(room_id, location_id, stage_id)
-      DO UPDATE SET uses = uses + 1 WHERE uses < ?
-    `).run(state.roomId, input.locationId, input.stageId, globalLimit);
+      DO UPDATE SET uses = uses + 1
+    `).run(state.roomId, input.locationId, input.stageId);
     if (personal.changes !== 1 || global.changes !== 1) {
       database.exec('ROLLBACK');
       return false;

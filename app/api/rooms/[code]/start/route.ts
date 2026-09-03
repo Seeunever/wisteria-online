@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUser } from '@/lib/auth';
 import { evaluateStageFlowCondition, type AuthorizationContext } from '@/lib/blind-runtime';
-import { loadFrozenBundle } from '@/lib/packs';
+import { runtimeMechanismsRequireFullRoleAssignment } from '@/lib/investigation/rotating-blind-draw';
+import { loadInstalledPack } from '@/lib/packs';
 import { getRoomForMember, startRoom } from '@/lib/rooms';
 import { assertSameOrigin } from '@/lib/security';
 
@@ -22,7 +23,7 @@ export async function POST(
     const form = await request.formData();
     const forceStart = form.get('forceStart') === 'confirmed'
       && form.get('confirmConsequences') === 'yes';
-    const bundle = loadFrozenBundle(room.versionId);
+    const { bundle, runtimePolicy } = loadInstalledPack(room.versionId);
     const roleIds = Object.keys(bundle.roles);
     const assignedRoleIds = new Set(
       room.members.map((member) => member.assignedRoleId).filter((id): id is string => id !== null),
@@ -42,6 +43,9 @@ export async function POST(
       sessionCompleted: false,
     };
     const allRolesAssigned = assignedRoleIds.size === roleIds.length;
+    const fullAssignmentRequired = runtimeMechanismsRequireFullRoleAssignment(
+      runtimePolicy.stageMechanisms,
+    );
     const assignedRolesAreValid = assignedRoleIds.size > 0
       && [...assignedRoleIds].every((roleId) => roleIds.includes(roleId));
     const simulatedFlowRoles = forceStart && !allRolesAssigned ? new Set(roleIds) : undefined;
@@ -49,6 +53,7 @@ export async function POST(
       !firstStage
       || !assignedRolesAreValid
       || (!allRolesAssigned && !forceStart)
+      || (!allRolesAssigned && fullAssignmentRequired)
       || !evaluateStageFlowCondition(firstStage.enterWhen, context, simulatedFlowRoles)
       || !startRoom(
         code,

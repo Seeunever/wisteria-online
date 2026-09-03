@@ -6,6 +6,7 @@ import io
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -31,6 +32,15 @@ class Engine:
 
 
 class OcrHardeningTests(unittest.TestCase):
+    def test_engine_versions_come_from_installed_distributions(self) -> None:
+        with patch.object(extract_ocr.importlib.metadata, "version", return_value="1.23.2"):
+            self.assertEqual(extract_ocr.installed_version("onnxruntime"), "1.23.2")
+
+    def test_invalid_engine_version_fails_closed(self) -> None:
+        with patch.object(extract_ocr.importlib.metadata, "version", return_value="bad value"):
+            with self.assertRaisesRegex(ValueError, "INVALID_OCR_ENGINE_VERSION"):
+                extract_ocr.installed_version("onnxruntime")
+
     def test_normalized_polygon_is_bounded_and_stable(self) -> None:
         self.assertEqual(
             extract_ocr.normalized_polygon(Box(), 100, 50),

@@ -37,6 +37,7 @@ export async function POST(
       heldClueIds: new Set(),
       roomHeldClueIds: new Set(),
       publishedClueIds: new Set(),
+      investigationCompletedStageIds: new Set(),
       hostReleaseIds: new Set(),
       sessionCompleted: false,
     };

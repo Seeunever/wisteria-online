@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
 import sys
@@ -69,6 +70,13 @@ def load_ocr_dependencies() -> tuple[Any, Any, Any]:
     from rapidocr import RapidOCR
 
     return RapidOCR, cv2, (fitz, np)
+
+
+def installed_version(distribution: str) -> str:
+    value = importlib.metadata.version(distribution)
+    if not value or any(character not in "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-_+" for character in value):
+        raise ValueError("INVALID_OCR_ENGINE_VERSION")
+    return value
 
 
 def normalized_polygon(box: Any, width: int, height: int) -> list[list[float]]:
@@ -205,7 +213,11 @@ def build_ocr_artifact(run_root: Path, manifest: dict[str, Any]) -> dict[str, An
         "schema": OCR_SCHEMA,
         "pack_id": manifest.get("pack_id"),
         "classification": "RAW_SECRET",
-        "engine": {"name": "rapidocr", "version": "3.9.2", "backend": "onnxruntime-1.29.0"},
+        "engine": {
+            "name": "rapidocr",
+            "version": installed_version("rapidocr"),
+            "backend": f"onnxruntime-{installed_version('onnxruntime')}",
+        },
         "pages": pages,
     }
 

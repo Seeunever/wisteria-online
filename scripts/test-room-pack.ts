@@ -19,8 +19,12 @@ test('room versions freeze atomically and incomplete starts require an explicit 
       joinRoom,
       listRooms,
       publishHeldClue,
+      getInvestigationState,
+      searchInvestigationLocation,
       searchLocation,
       startRoom,
+      voteInvestigationCompletion,
+      voteInvestigationLocation,
     }] = await Promise.all([
       import('../lib/db.ts'),
       import('../lib/rooms.ts'),
@@ -204,9 +208,247 @@ test('room versions freeze atomically and incomplete starts require an explicit 
       eligibleClueIds: ['clue_bbbbbbbb'], mode: 'fixed_sequence',
       perPlayerLimit: 1, globalLimit: 1,
     }), false);
-    assert.equal(publishHeldClue(code!, 'user-other', 'clue_aaaaaaaa'), false);
-    assert.equal(publishHeldClue(code!, 'user-owner', 'clue_aaaaaaaa'), true);
-    assert.equal(publishHeldClue(code!, 'user-owner', 'clue_aaaaaaaa'), false);
+    const publishAuthorizationVersion = authorizationVersion(code!);
+    assert.equal(publishHeldClue({
+      code: code!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: publishAuthorizationVersion - 1, clueId: 'clue_aaaaaaaa',
+    }), false);
+    assert.equal(publishHeldClue({
+      code: code!, userId: 'user-other', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: publishAuthorizationVersion, clueId: 'clue_aaaaaaaa',
+    }), false);
+    assert.equal(publishHeldClue({
+      code: code!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: publishAuthorizationVersion, clueId: 'clue_aaaaaaaa',
+    }), true);
+    const publishEvent = database.prepare(`
+      SELECT COUNT(*) AS count
+      FROM room_events
+      JOIN rooms ON rooms.id = room_events.room_id
+      WHERE rooms.code = ? AND room_events.event_type = 'clue_published'
+        AND room_events.object_id = ?
+    `).get(code, 'clue_aaaaaaaa') as { count: number };
+    assert.equal(publishEvent.count, 1);
+    assert.equal(publishHeldClue({
+      code: code!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(code!), clueId: 'clue_aaaaaaaa',
+    }), false);
+
+    const investigationCode = createRoom('user-owner', 'ver_aaaaaaaa');
+    assert.notEqual(investigationCode, null);
+    assert.equal(joinRoom('user-other', investigationCode!), true);
+    assert.equal(claimRole(investigationCode!, 'user-owner', 'role_aaaaaaaa'), true);
+    assert.equal(claimRole(investigationCode!, 'user-other', 'role_bbbbbbbb'), true);
+    assert.equal(startRoom(
+      investigationCode!, 'user-owner', 'ver_aaaaaaaa',
+      ['role_aaaaaaaa', 'role_bbbbbbbb'], 'stage_aaaaaaaa', 1,
+      authorizationVersion(investigationCode!),
+    ), true);
+    const investigationRoom = getRoomForMember(investigationCode!, 'user-owner');
+    assert.notEqual(investigationRoom, null);
+    const ownerMembershipId = investigationRoom!.members.find(
+      (member) => member.assignedRoleId === 'role_aaaaaaaa',
+    )!.membershipId;
+    const otherMembershipId = investigationRoom!.members.find(
+      (member) => member.assignedRoleId === 'role_bbbbbbbb',
+    )!.membershipId;
+    const orderedMembershipIds = [ownerMembershipId, otherMembershipId];
+    const vote = (
+      userId: string,
+      locationId: string,
+      actorEligibleLocationIds = ['loc_aaaaaaaa', 'loc_bbbbbbbb'],
+    ) => voteInvestigationLocation({
+      code: investigationCode!, userId, versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(investigationCode!),
+      stageId: 'stage_aaaaaaaa', locationId,
+      eligibleLocationIds: ['loc_aaaaaaaa', 'loc_bbbbbbbb'], orderedMembershipIds,
+      actorEligibleLocationIds,
+      scope: 'room_scoped', maxPrivateCount: 99, blockForPublication: true,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    });
+    assert.equal(vote('user-owner', 'loc_aaaaaaaa', ['loc_bbbbbbbb']), false);
+    assert.equal(vote('user-other', 'loc_bbbbbbbb'), true);
+    assert.equal(vote('user-owner', 'loc_aaaaaaaa'), true);
+    let investigationState = getInvestigationState({
+      roomId: investigationRoom!.id, membershipId: ownerMembershipId,
+      stageId: 'stage_aaaaaaaa', scope: 'room_scoped', maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    });
+    assert.equal(investigationState.selectedLocationId, 'loc_aaaaaaaa');
+    assert.equal(investigationState.currentTurnMembershipId, ownerMembershipId);
+    assert.equal(searchInvestigationLocation({
+      code: investigationCode!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(investigationCode!),
+      stageId: 'stage_aaaaaaaa', locationId: 'loc_aaaaaaaa',
+      selectedClueId: 'clue_aaaaaaaa', eligibleClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+      actorEligibleClueIds: ['clue_bbbbbbbb'],
+      orderedMembershipIds, maxPrivateCount: 99, blockForPublication: true,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    }), false);
+    assert.equal(searchInvestigationLocation({
+      code: investigationCode!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(investigationCode!),
+      stageId: 'stage_aaaaaaaa', locationId: 'loc_aaaaaaaa',
+      selectedClueId: 'clue_aaaaaaaa', eligibleClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+      actorEligibleClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+      orderedMembershipIds, maxPrivateCount: 99, blockForPublication: true,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    }), true);
+    investigationState = getInvestigationState({
+      roomId: investigationRoom!.id, membershipId: ownerMembershipId,
+      stageId: 'stage_aaaaaaaa', scope: 'room_scoped', maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    });
+    assert.equal(investigationState.currentTurnMembershipId, otherMembershipId);
+    assert.equal(searchInvestigationLocation({
+      code: investigationCode!, userId: 'user-other', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(investigationCode!),
+      stageId: 'stage_aaaaaaaa', locationId: 'loc_aaaaaaaa',
+      selectedClueId: 'clue_bbbbbbbb', eligibleClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+      actorEligibleClueIds: ['clue_bbbbbbbb'],
+      orderedMembershipIds, maxPrivateCount: 99, blockForPublication: true,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    }), true);
+    investigationState = getInvestigationState({
+      roomId: investigationRoom!.id, membershipId: ownerMembershipId,
+      stageId: 'stage_aaaaaaaa', scope: 'room_scoped', maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    });
+    assert.equal(investigationState.selectedLocationId, null);
+    assert.deepEqual(investigationState.searchedLocationIds, ['loc_aaaaaaaa']);
+    assert.equal(investigationState.hasPublicationObligation, true);
+    const quotaState = getInvestigationState({
+      roomId: investigationRoom!.id, membershipId: ownerMembershipId,
+      stageId: 'stage_aaaaaaaa', scope: 'room_scoped', perPlayerStageLimit: 1,
+      maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    });
+    assert.equal(quotaState.acquisitionsThisStage, 1);
+    assert.equal(quotaState.roomQuotaReached, true);
+    assert.equal(voteInvestigationLocation({
+      code: investigationCode!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(investigationCode!),
+      stageId: 'stage_aaaaaaaa', locationId: 'loc_bbbbbbbb',
+      eligibleLocationIds: ['loc_bbbbbbbb'], actorEligibleLocationIds: ['loc_bbbbbbbb'],
+      orderedMembershipIds, scope: 'room_scoped', perPlayerStageLimit: 1,
+      maxPrivateCount: 99, blockForPublication: false,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    }), false);
+    assert.equal(vote('user-owner', 'loc_bbbbbbbb'), false);
+    assert.equal(publishHeldClue({
+      code: investigationCode!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(investigationCode!), clueId: 'clue_aaaaaaaa',
+    }), true);
+    assert.equal(vote('user-owner', 'loc_bbbbbbbb'), true);
+    assert.equal(voteInvestigationCompletion({
+      code: investigationCode!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(investigationCode!),
+      stageId: 'stage_aaaaaaaa', orderedMembershipIds,
+      remainingLocationIds: ['loc_bbbbbbbb'], maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    }), false);
+    assert.equal(publishHeldClue({
+      code: investigationCode!, userId: 'user-other', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(investigationCode!), clueId: 'clue_bbbbbbbb',
+    }), true);
+    assert.equal(vote('user-other', 'loc_bbbbbbbb'), true);
+    investigationState = getInvestigationState({
+      roomId: investigationRoom!.id, membershipId: ownerMembershipId,
+      stageId: 'stage_aaaaaaaa', scope: 'room_scoped', maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    });
+    assert.equal(investigationState.selectedLocationId, 'loc_bbbbbbbb');
+    assert.equal(investigationState.currentTurnMembershipId, otherMembershipId);
+    assert.equal(searchInvestigationLocation({
+      code: investigationCode!, userId: 'user-other', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(investigationCode!),
+      stageId: 'stage_aaaaaaaa', locationId: 'loc_bbbbbbbb',
+      selectedClueId: 'clue_cccccccc', eligibleClueIds: ['clue_cccccccc', 'clue_dddddddd'],
+      actorEligibleClueIds: ['clue_cccccccc', 'clue_dddddddd'],
+      orderedMembershipIds, maxPrivateCount: 99, blockForPublication: true,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    }), true);
+    assert.equal(searchInvestigationLocation({
+      code: investigationCode!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(investigationCode!),
+      stageId: 'stage_aaaaaaaa', locationId: 'loc_bbbbbbbb',
+      selectedClueId: 'clue_dddddddd', eligibleClueIds: ['clue_cccccccc', 'clue_dddddddd'],
+      actorEligibleClueIds: ['clue_dddddddd'],
+      orderedMembershipIds, maxPrivateCount: 99, blockForPublication: true,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    }), true);
+    investigationState = getInvestigationState({
+      roomId: investigationRoom!.id, membershipId: ownerMembershipId,
+      stageId: 'stage_aaaaaaaa', scope: 'room_scoped', maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    });
+    assert.equal(investigationState.selectedLocationId, null);
+    assert.deepEqual(investigationState.searchedLocationIds, ['loc_aaaaaaaa', 'loc_bbbbbbbb']);
+    assert.deepEqual(investigationState.completionVoteMembershipIds, []);
+    assert.equal(investigationState.stageCompleted, false);
+
+    const firstCompletionAuthorizationVersion = authorizationVersion(investigationCode!);
+    assert.equal(voteInvestigationCompletion({
+      code: investigationCode!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: firstCompletionAuthorizationVersion,
+      stageId: 'stage_aaaaaaaa', orderedMembershipIds,
+      remainingLocationIds: [], maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    }), true);
+    investigationState = getInvestigationState({
+      roomId: investigationRoom!.id, membershipId: ownerMembershipId,
+      stageId: 'stage_aaaaaaaa', scope: 'room_scoped', maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    });
+    assert.deepEqual(investigationState.completionVoteMembershipIds, [ownerMembershipId]);
+    assert.equal(investigationState.stageCompleted, false);
+    assert.deepEqual(
+      getRoomForMember(investigationCode!, 'user-owner')?.investigationCompletedStageIds,
+      [],
+    );
+    assert.equal(authorizationVersion(investigationCode!), firstCompletionAuthorizationVersion);
+    database.prepare(`
+      UPDATE rooms SET authorization_version = authorization_version + 1 WHERE code = ?
+    `).run(investigationCode);
+    investigationState = getInvestigationState({
+      roomId: investigationRoom!.id, membershipId: ownerMembershipId,
+      stageId: 'stage_aaaaaaaa', scope: 'room_scoped', maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    });
+    assert.deepEqual(investigationState.completionVoteMembershipIds, []);
+    assert.equal(voteInvestigationCompletion({
+      code: investigationCode!, userId: 'user-other', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: firstCompletionAuthorizationVersion,
+      stageId: 'stage_aaaaaaaa', orderedMembershipIds,
+      remainingLocationIds: [], maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    }), false);
+    assert.equal(voteInvestigationCompletion({
+      code: investigationCode!, userId: 'user-other', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(investigationCode!),
+      stageId: 'stage_aaaaaaaa', orderedMembershipIds,
+      remainingLocationIds: [], maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    }), true);
+    assert.equal(voteInvestigationCompletion({
+      code: investigationCode!, userId: 'user-owner', versionId: 'ver_aaaaaaaa',
+      authorizationVersion: authorizationVersion(investigationCode!),
+      stageId: 'stage_aaaaaaaa', orderedMembershipIds,
+      remainingLocationIds: [], maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    }), true);
+    investigationState = getInvestigationState({
+      roomId: investigationRoom!.id, membershipId: ownerMembershipId,
+      stageId: 'stage_aaaaaaaa', scope: 'room_scoped', maxPrivateCount: 99,
+      mandatoryClueIds: ['clue_aaaaaaaa', 'clue_bbbbbbbb'],
+    });
+    assert.deepEqual(investigationState.completionVoteMembershipIds, []);
+    assert.equal(investigationState.stageCompleted, true);
+    assert.deepEqual(
+      getRoomForMember(investigationCode!, 'user-owner')?.investigationCompletedStageIds,
+      ['stage_aaaaaaaa'],
+    );
+
     const version = database.prepare(
       'SELECT authorization_version AS value FROM rooms WHERE code = ?',
     ).get(code) as { value: number };

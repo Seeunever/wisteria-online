@@ -72,6 +72,52 @@ def disabled_publication_bundle() -> dict[str, object]:
     return bundle
 
 
+def investigation_bundle(
+    completion_op: str = "investigation_complete",
+) -> dict[str, object]:
+    bundle = disabled_publication_bundle()
+    stage = bundle["stages"]["stage_aaaaaaaa"]
+    stage["allowedActions"] = ["search"]
+    stage["completeWhen"] = {
+        "op": completion_op,
+        "stageId": "stage_aaaaaaaa",
+    }
+    stage["investigationFlow"] = {
+        "locationSelection": {
+            "mode": "vote",
+            "scope": "room_scoped",
+            "resolution": "plurality_all_cast",
+            "tieBreak": "seat_cursor_choice",
+        },
+        "turnOrder": {"mode": "seat_order"},
+        "clueDeal": {
+            "mode": "verified_pool_order",
+            "commit": "one_per_turn",
+        },
+        "acquisitionLimit": {"scope": "stage", "perPlayer": 1},
+        "publicationDuty": {
+            "predicate": "round_scoped_private_holding_count",
+            "maxPrivateCount": 1,
+            "action": "publish_one_held",
+            "blockedActions": ["vote_location", "search"],
+        },
+        "roleRestrictions": [
+            {
+                "principalRoleId": "role_aaaaaaaa",
+                "restrictedLocationIds": ["loc_aaaaaaaa"],
+                "restrictedClueIds": ["clue_aaaaaaaa"],
+                "mode": "deny_unless_only_remaining_eligible",
+            }
+        ],
+        "completion": {
+            "mode": "consent_vote",
+            "exhaustive": "per_player_quota",
+        },
+    }
+    rehash(bundle)
+    return bundle
+
+
 def make_run_root(parent: Path, bundle: dict[str, object] | None = None) -> Path:
     root = parent / "opaque-run-root"
     root.mkdir(parents=True)
@@ -89,9 +135,14 @@ def make_run_root(parent: Path, bundle: dict[str, object] | None = None) -> Path
     source["sha256"] = digest
     source["byteLength"] = len(blob)
     source["pages"][0]["sha256"] = digest
+    page_object = materialized["assets"]["asset_aaaaaaaa"]["pageObjects"][0]
+    page_object["sha256"] = digest
+    page_object["byteLength"] = len(blob)
     rehash(materialized)
     blob_ref = "vault:sources/src_0000000000000001.blob"
     (root / "vault" / "sources" / "src_0000000000000001.blob").write_bytes(blob)
+    (root / "vault" / "rendered").mkdir()
+    (root / "vault" / "rendered" / "src_aaaaaaaa.page_aaaaaaaa.webp").write_bytes(blob)
     manifest = {
         "schema": "blind-private-inventory/1.0",
         "pack_id": "pack_00000000000000000000000000000000",
@@ -140,6 +191,299 @@ class TrackingStdout(io.StringIO):
 
 
 class BundleHardeningTests(unittest.TestCase):
+    def test_mandatory_publication_duty_requires_a_publishable_clue(self) -> None:
+        bundle = valid_bundle()
+        add_valid_clue(bundle, {"op": "clue_held", "clueId": "clue_aaaaaaaa"})
+        bundle["clues"]["clue_aaaaaaaa"]["publication"]["duty"] = {
+            "mode": "mandatory_on_acquire"
+        }
+        rehash(bundle)
+        self.assertTrue(validate_bundle.validate_bundle(bundle)["freeze_ready"])
+
+        invalid = copy.deepcopy(bundle)
+        invalid["clues"]["clue_aaaaaaaa"]["publication"]["allowed"] = False
+        invalid["clues"]["clue_aaaaaaaa"]["publication"]["revealedFaceIds"] = []
+        rehash(invalid)
+        report = validate_bundle.validate_bundle(invalid)
+        self.assertIn("INVALID_PUBLICATION_DUTY", issue_codes(report))
+        self.assertTrue(validate_safe_report.validate_report(report))
+
+    def test_investigation_flow_is_strict_and_safe_reportable(self) -> None:
+        bundle = disabled_publication_bundle()
+        bundle["stages"]["stage_aaaaaaaa"]["allowedActions"] = ["search"]
+        bundle["stages"]["stage_aaaaaaaa"]["investigationFlow"] = {
+            "locationSelection": {
+                "mode": "vote",
+                "scope": "room_scoped",
+                "resolution": "plurality_all_cast",
+                "tieBreak": "seat_cursor_choice",
+            },
+            "turnOrder": {"mode": "seat_order"},
+            "clueDeal": {
+                "mode": "verified_pool_order",
+                "commit": "one_per_turn",
+            },
+            "acquisitionLimit": {"scope": "stage", "perPlayer": 1},
+            "publicationDuty": {
+                "predicate": "round_scoped_private_holding_count",
+                "maxPrivateCount": 1,
+                "action": "publish_one_held",
+                "blockedActions": ["vote_location", "search"],
+            },
+        }
+        rehash(bundle)
+        self.assertTrue(validate_bundle.validate_bundle(bundle)["freeze_ready"])
+
+        invalid = copy.deepcopy(bundle)
+        invalid["stages"]["stage_aaaaaaaa"]["investigationFlow"][
+            "publicationDuty"
+        ]["maxPrivateCount"] = -1
+        rehash(invalid)
+        report = validate_bundle.validate_bundle(invalid)
+        self.assertIn("INVALID_INVESTIGATION_FLOW", issue_codes(report))
+        self.assertTrue(validate_safe_report.validate_report(report))
+
+    def test_investigation_restrictions_and_completion_are_strict(self) -> None:
+        for completion_op in (
+            "investigation_complete",
+            "completion_vote_satisfied",
+        ):
+            with self.subTest(completion_op=completion_op):
+                bundle = investigation_bundle(completion_op)
+                report = validate_bundle.validate_bundle(bundle)
+                self.assertTrue(report["freeze_ready"])
+                self.assertTrue(validate_safe_report.validate_report(report))
+
+        base = investigation_bundle()
+        invalid_mutations = {
+            "empty restriction": lambda flow, stage: flow["roleRestrictions"][0].update(
+                {"restrictedLocationIds": [], "restrictedClueIds": []}
+            ),
+            "unknown restricted location": lambda flow, stage: flow[
+                "roleRestrictions"
+            ][0].update({"restrictedLocationIds": ["loc_bbbbbbbb"]}),
+            "duplicate role restriction": lambda flow, stage: flow[
+                "roleRestrictions"
+            ].append(copy.deepcopy(flow["roleRestrictions"][0])),
+            "wrong fallback mode": lambda flow, stage: flow["roleRestrictions"][
+                0
+            ].update({"mode": "always_deny"}),
+            "wrong completion mode": lambda flow, stage: flow["completion"].update(
+                {"mode": "host_only"}
+            ),
+            "non-investigation completion condition": lambda flow, stage: stage.update(
+                {"completeWhen": {"op": "always"}}
+            ),
+        }
+        for case, mutate in invalid_mutations.items():
+            with self.subTest(case=case):
+                invalid = copy.deepcopy(base)
+                stage = invalid["stages"]["stage_aaaaaaaa"]
+                mutate(stage["investigationFlow"], stage)
+                rehash(invalid)
+                report = validate_bundle.validate_bundle(invalid)
+                self.assertIn("INVALID_INVESTIGATION_FLOW", issue_codes(report))
+                self.assertFalse(report["freeze_ready"])
+                self.assertTrue(validate_safe_report.validate_report(report))
+
+        host_dealt = copy.deepcopy(base)
+        host_dealt["locations"]["loc_aaaaaaaa"]["searchPolicy"]["mode"] = (
+            "host_dealt"
+        )
+        rehash(host_dealt)
+        report = validate_bundle.validate_bundle(host_dealt)
+        self.assertIn("INVALID_INVESTIGATION_FLOW", issue_codes(report))
+        self.assertFalse(report["freeze_ready"])
+        self.assertTrue(validate_safe_report.validate_report(report))
+
+        empty_location = copy.deepcopy(base)
+        empty_location["locations"]["loc_aaaaaaaa"]["cluePool"] = []
+        rehash(empty_location)
+        report = validate_bundle.validate_bundle(empty_location)
+        self.assertIn("INVALID_INVESTIGATION_FLOW", issue_codes(report))
+        self.assertFalse(report["freeze_ready"])
+        self.assertTrue(validate_safe_report.validate_report(report))
+
+        viewer_local_conditions = {
+            "location negated role": (
+                ("locations", "loc_aaaaaaaa", "availableWhen"),
+                {
+                    "op": "not",
+                    "arg": {
+                        "op": "role_assigned",
+                        "roleId": "role_aaaaaaaa",
+                    },
+                },
+            ),
+            "pool clue holder": (
+                (
+                    "locations",
+                    "loc_aaaaaaaa",
+                    "cluePool",
+                    0,
+                    "availableWhen",
+                ),
+                {"op": "clue_held", "clueId": "clue_aaaaaaaa"},
+            ),
+            "acquisition negated role": (
+                ("clues", "clue_aaaaaaaa", "acquisition", "when"),
+                {
+                    "op": "not",
+                    "arg": {
+                        "op": "role_assigned",
+                        "roleId": "role_aaaaaaaa",
+                    },
+                },
+            ),
+        }
+        for case, (path, condition) in viewer_local_conditions.items():
+            with self.subTest(case=case):
+                invalid = copy.deepcopy(base)
+                set_at(invalid, path, condition)
+                rehash(invalid)
+                report = validate_bundle.validate_bundle(invalid)
+                self.assertIn("INVALID_INVESTIGATION_FLOW", issue_codes(report))
+                self.assertFalse(report["freeze_ready"])
+                self.assertTrue(validate_safe_report.validate_report(report))
+
+        room_event_conditions = copy.deepcopy(base)
+        clue = room_event_conditions["clues"]["clue_aaaaaaaa"]
+        clue["publication"]["allowed"] = True
+        clue["publication"]["revealedFaceIds"] = ["face_aaaaaaaa"]
+        room_event_conditions["locations"]["loc_aaaaaaaa"]["availableWhen"] = {
+            "op": "clue_acquired_in_room",
+            "clueId": "clue_aaaaaaaa",
+        }
+        room_event_conditions["locations"]["loc_aaaaaaaa"]["cluePool"][0][
+            "availableWhen"
+        ] = {"op": "clue_published", "clueId": "clue_aaaaaaaa"}
+        clue["acquisition"]["when"] = {
+            "op": "clue_published",
+            "clueId": "clue_aaaaaaaa",
+        }
+        rehash(room_event_conditions)
+        report = validate_bundle.validate_bundle(room_event_conditions)
+        self.assertTrue(report["freeze_ready"])
+        self.assertTrue(validate_safe_report.validate_report(report))
+
+    def test_clue_acquired_in_room_condition_is_valid_and_reference_checked(self) -> None:
+        bundle = disabled_publication_bundle()
+        bundle["stages"]["stage_aaaaaaaa"]["completeWhen"] = {
+            "op": "clue_acquired_in_room",
+            "clueId": "clue_aaaaaaaa",
+        }
+        rehash(bundle)
+        report = validate_bundle.validate_bundle(bundle)
+        self.assertTrue(report["freeze_ready"])
+        self.assertTrue(validate_safe_report.validate_report(report))
+
+        invalid = copy.deepcopy(bundle)
+        invalid["stages"]["stage_aaaaaaaa"]["completeWhen"]["clueId"] = (
+            "clue_bbbbbbbb"
+        )
+        rehash(invalid)
+        report = validate_bundle.validate_bundle(invalid)
+        self.assertIn("INVALID_CONDITION_REFERENCE", issue_codes(report))
+        self.assertFalse(report["freeze_ready"])
+        self.assertTrue(validate_safe_report.validate_report(report))
+
+    def test_published_clue_can_grant_its_exact_compartment_to_the_room(self) -> None:
+        bundle = valid_bundle()
+        add_valid_clue(
+            bundle,
+            {"op": "clue_held", "clueId": "clue_aaaaaaaa"},
+        )
+        clue_content = bundle["contentBlocks"]["cnt_dddddddd"]
+        clue_content["visibility"]["grants"].append(
+            {
+                "policyId": "policy_eeeeeeee",
+                "principal": {"kind": "room_after_event", "subjectId": None},
+                "when": {"op": "clue_published", "clueId": "clue_aaaaaaaa"},
+                "evidence": [evidence()],
+            }
+        )
+        rehash(bundle)
+        report = validate_bundle.validate_bundle(bundle)
+        self.assertTrue(report["freeze_ready"])
+        self.assertTrue(validate_safe_report.validate_report(report))
+
+        overbroad_conditions = {
+            "always": {"op": "always"},
+            "acquired only": {
+                "op": "clue_acquired_in_room",
+                "clueId": "clue_aaaaaaaa",
+            },
+            "publication is optional branch": {
+                "op": "any",
+                "args": [
+                    {"op": "clue_published", "clueId": "clue_aaaaaaaa"},
+                    {"op": "always"},
+                ],
+            },
+        }
+        for case, condition in overbroad_conditions.items():
+            with self.subTest(case=case):
+                invalid = copy.deepcopy(bundle)
+                invalid["contentBlocks"]["cnt_dddddddd"]["visibility"]["grants"][
+                    1
+                ]["when"] = condition
+                rehash(invalid)
+                report = validate_bundle.validate_bundle(invalid)
+                self.assertIn("COMPARTMENT_TOO_BROAD", issue_codes(report))
+                self.assertIn("COMPARTMENT_PRINCIPAL_MISMATCH", issue_codes(report))
+                self.assertFalse(report["freeze_ready"])
+                self.assertTrue(validate_safe_report.validate_report(report))
+
+    def test_published_room_grant_cannot_reveal_an_unlisted_face(self) -> None:
+        bundle = valid_bundle()
+        add_valid_clue(
+            bundle,
+            {"op": "clue_held", "clueId": "clue_aaaaaaaa"},
+        )
+        hidden_face_content = copy.deepcopy(
+            bundle["contentBlocks"]["cnt_dddddddd"]
+        )
+        hidden_face_content["contentId"] = "cnt_eeeeeeee"
+        hidden_face_content["visibility"]["grants"][0]["policyId"] = (
+            "policy_ffffffff"
+        )
+        hidden_face_content["visibility"]["grants"].append(
+            {
+                "policyId": "policy_cccccccc",
+                "principal": {"kind": "room_after_event", "subjectId": None},
+                "when": {"op": "clue_published", "clueId": "clue_aaaaaaaa"},
+                "evidence": [evidence()],
+            }
+        )
+        bundle["contentBlocks"]["cnt_eeeeeeee"] = hidden_face_content
+        bundle["clues"]["clue_aaaaaaaa"]["faces"].append(
+            {
+                "faceId": "face_bbbbbbbb",
+                "side": "back",
+                "assetIds": ["asset_aaaaaaaa"],
+                "contentIds": ["cnt_eeeeeeee"],
+                "revealWhen": {
+                    "op": "clue_held",
+                    "clueId": "clue_aaaaaaaa",
+                },
+                "evidence": [evidence()],
+            }
+        )
+        rehash(bundle)
+        report = validate_bundle.validate_bundle(bundle)
+        self.assertIn("COMPARTMENT_TOO_BROAD", issue_codes(report))
+        self.assertIn("COMPARTMENT_PRINCIPAL_MISMATCH", issue_codes(report))
+        self.assertFalse(report["freeze_ready"])
+        self.assertTrue(validate_safe_report.validate_report(report))
+
+        bundle["clues"]["clue_aaaaaaaa"]["publication"][
+            "revealedFaceIds"
+        ].append("face_bbbbbbbb")
+        rehash(bundle)
+        report = validate_bundle.validate_bundle(bundle)
+        self.assertTrue(report["freeze_ready"])
+        self.assertTrue(validate_safe_report.validate_report(report))
+
     def test_collection_shape_codes_are_allowed_safe_output(self) -> None:
         fields = {
             "sources": "INVALID_SOURCES_COLLECTION",

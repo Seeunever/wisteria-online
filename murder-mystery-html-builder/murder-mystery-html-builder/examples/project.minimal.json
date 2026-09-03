@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "title": "示例游戏",
+  "mode": "guided-single",
+  "roles": [
+    {
+      "id": "role-a",
+      "name": "角色甲",
+      "stages": [
+        {
+          "id": "role-a-stage-1",
+          "title": "第一幕",
+          "items": [
+            {"source": "roles/role-a.pdf", "page": 1}
+          ]
+        },
+        {
+          "id": "role-a-stage-2",
+          "title": "第二幕",
+          "items": [
+            {"source": "roles/role-a.pdf", "page": 2}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "role-b",
+      "name": "角色乙",
+      "stages": [
+        {
+          "id": "role-b-stage-1",
+          "title": "第一幕",
+          "items": [
+            {"source": "roles/role-b.pdf", "page": 1}
+          ]
+        },
+        {
+          "id": "role-b-stage-2",
+          "title": "第二幕",
+          "items": [
+            {"source": "roles/role-b.pdf", "page": 2}
+          ]
+        }
+      ]
+    }
+  ],
+  "clueGroups": [
+    {
+      "id": "round-1",
+      "title": "第一轮线索",
+      "unlockStage": 1,
+      "cards": [
+        {
+          "id": "round-1-card-1",
+          "label": "线索 01",
+          "front": {"source": "clues/round-1.pdf", "page": 1},
+          "back": {"source": "clues/round-1.pdf", "page": 2}
+        }
+      ]
+    }
+  ],
+  "manualSteps": [
+    {
+      "id": "prepare",
+      "title": "准备与规则",
+      "unlockStage": 0,
+      "items": [
+        {"source": "guide.pdf", "page": 1}
+      ]
+    },
+    {
+      "id": "finish",
+      "title": "结算流程",
+      "unlockStage": 2,
+      "items": [
+        {"source": "guide.pdf", "page": 2}
+      ]
+    }
+  ],
+  "settings": {
+    "progressKey": "example-game-progress",
+    "dpi": 120,
+    "quality": 84,
+    "intro": "请选择自己的角色，并按页面提示共同推进。"
+  }
+}

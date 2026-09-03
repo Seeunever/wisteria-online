@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  applyFallbackRestriction,
+  canProjectImageContent,
   canReadContent,
+  deriveInvestigationCandidates,
   evaluateCondition,
   evaluateStageFlowCondition,
+  evaluateViewerCondition,
   projectAssignedRole,
   projectAvailableLocations,
   projectLobby,
+  projectPlayerGuide,
+  projectReleasedResolution,
   projectVisibleClues,
   withEligibleHostReleases,
   type AuthorizationContext,
@@ -20,6 +26,7 @@ const ROLE_A_CANARY = 'ROLE_A_CANARY_NEVER_CROSS';
 const ROLE_B_CANARY = 'ROLE_B_CANARY_NEVER_CROSS';
 const HOST_CANARY = 'HOST_CANARY_NEVER_EXPORT';
 const CLUE_CANARY = 'CLUE_HOLDER_CANARY';
+const PLAYER_GUIDE_CANARY = 'PLAYER_GUIDE_CANARY';
 
 function context(overrides: Partial<AuthorizationContext> = {}): AuthorizationContext {
   return {
@@ -33,6 +40,7 @@ function context(overrides: Partial<AuthorizationContext> = {}): AuthorizationCo
     publishedClueIds: new Set(),
     hostReleaseIds: new Set(),
     sessionCompleted: false,
+    investigationCompletedStageIds: new Set(),
     ...overrides,
   };
 }
@@ -169,6 +177,287 @@ test('condition evaluation fails closed and respects current state', () => {
   } as never, current), false);
 });
 
+test('room acquisition and collective investigation completion use room-scoped state', () => {
+  const viewerOnlyHolding = context({
+    heldClueIds: new Set(['clue_aaaaaaaa']),
+  });
+  assert.equal(
+    evaluateCondition({ op: 'clue_acquired_in_room', clueId: 'clue_aaaaaaaa' }, viewerOnlyHolding),
+    false,
+  );
+
+  const acquiredInRoom = context({
+    roomHeldClueIds: new Set(['clue_aaaaaaaa']),
+  });
+  assert.equal(
+    evaluateCondition({ op: 'clue_acquired_in_room', clueId: 'clue_aaaaaaaa' }, acquiredInRoom),
+    true,
+  );
+
+  const completed = context({
+    investigationCompletedStageIds: new Set(['stage_aaaaaaaa']),
+  });
+  assert.equal(
+    evaluateCondition({ op: 'investigation_complete', stageId: 'stage_aaaaaaaa' }, completed),
+    true,
+  );
+  assert.equal(
+    evaluateCondition({ op: 'completion_vote_satisfied', stageId: 'stage_aaaaaaaa' }, completed),
+    true,
+  );
+  assert.equal(
+    evaluateCondition({ op: 'investigation_complete', stageId: 'stage_bbbbbbbb' }, completed),
+    false,
+  );
+});
+
+test('fallback role restrictions prefer eligible unrestricted choices and fail open only as fallback', () => {
+  const candidates = ['loc_aaaaaaaa', 'loc_bbbbbbbb', 'loc_cccccccc'];
+  const restriction = {
+    restrictedLocationIds: ['loc_aaaaaaaa', 'loc_cccccccc'],
+    restrictedClueIds: ['clue_aaaaaaaa'],
+  };
+
+  assert.deepEqual(
+    applyFallbackRestriction(candidates, restriction, 'location'),
+    ['loc_bbbbbbbb'],
+  );
+  assert.deepEqual(
+    applyFallbackRestriction(['loc_aaaaaaaa', 'loc_cccccccc'], restriction, 'location'),
+    ['loc_aaaaaaaa', 'loc_cccccccc'],
+  );
+  assert.deepEqual(
+    applyFallbackRestriction(['clue_aaaaaaaa', 'clue_bbbbbbbb'], restriction, 'clue'),
+    ['clue_bbbbbbbb'],
+  );
+  assert.deepEqual(applyFallbackRestriction(candidates, undefined, 'location'), candidates);
+  assert.deepEqual(candidates, ['loc_aaaaaaaa', 'loc_bbbbbbbb', 'loc_cccccccc']);
+});
+
+test('viewer-scoped role gates do not inherit another member role', () => {
+  const roomContext = context({
+    assignedRoleId: 'role_aaaaaaaa',
+    assignedRoleIds: new Set(['role_aaaaaaaa', 'role_bbbbbbbb']),
+  });
+  assert.equal(
+    evaluateCondition({ op: 'role_assigned', roleId: 'role_bbbbbbbb' }, roomContext),
+    true,
+  );
+  assert.equal(
+    evaluateViewerCondition({ op: 'role_assigned', roleId: 'role_bbbbbbbb' }, roomContext),
+    false,
+  );
+  assert.equal(
+    evaluateViewerCondition({ op: 'role_assigned', roleId: 'role_aaaaaaaa' }, roomContext),
+    true,
+  );
+
+  const restrictedBundle: BlindBundle = {
+    ...bundle,
+    locations: {
+      ...bundle.locations,
+      loc_aaaaaaaa: {
+        ...bundle.locations.loc_aaaaaaaa,
+        availableWhen: {
+          op: 'not',
+          arg: { op: 'role_assigned', roleId: 'role_aaaaaaaa' },
+        },
+      },
+    },
+  };
+  const activeContext = {
+    ...roomContext,
+    activeStageId: 'stage_aaaaaaaa',
+    reachedStageIds: new Set(['stage_aaaaaaaa']),
+  };
+  assert.deepEqual(projectAvailableLocations(restrictedBundle, activeContext), []);
+  assert.equal(projectAvailableLocations(restrictedBundle, {
+    ...activeContext,
+    assignedRoleId: 'role_bbbbbbbb',
+  }).length, 1);
+});
+
+test('investigation candidates union assigned viewer contexts and exclude empty locations', () => {
+  const markerClue = {
+    ...bundle.clues.clue_aaaaaaaa,
+    clueId: 'clue_dddddddd',
+    faces: [],
+  };
+  const viewerBundle: BlindBundle = {
+    ...bundle,
+    stages: {
+      stage_aaaaaaaa: {
+        ...bundle.stages.stage_aaaaaaaa,
+        allowedActions: ['search'],
+        locationIds: ['loc_aaaaaaaa', 'loc_bbbbbbbb', 'loc_cccccccc'],
+        investigationFlow: {
+          locationSelection: {
+            mode: 'vote', scope: 'room_scoped', resolution: 'plurality_all_cast',
+            tieBreak: 'seat_cursor_choice',
+          },
+          turnOrder: { mode: 'seat_order' },
+          clueDeal: { mode: 'verified_pool_order', commit: 'one_per_turn' },
+          acquisitionLimit: { scope: 'stage', perPlayer: 1 },
+          publicationDuty: {
+            predicate: 'round_scoped_private_holding_count', maxPrivateCount: 1,
+            action: 'publish_one_held', blockedActions: ['vote_location', 'search'],
+          },
+        },
+      },
+    },
+    locations: {
+      loc_aaaaaaaa: {
+        ...bundle.locations.loc_aaaaaaaa,
+        availableWhen: { op: 'role_assigned', roleId: 'role_bbbbbbbb' },
+      },
+      loc_bbbbbbbb: {
+        ...bundle.locations.loc_aaaaaaaa,
+        locationId: 'loc_bbbbbbbb',
+        cluePool: [{
+          clueId: 'clue_bbbbbbbb', order: 1, copies: 1,
+          availableWhen: { op: 'clue_held', clueId: 'clue_dddddddd' },
+        }],
+      },
+      loc_cccccccc: {
+        ...bundle.locations.loc_aaaaaaaa,
+        locationId: 'loc_cccccccc',
+        cluePool: [{
+          clueId: 'clue_cccccccc', order: 1, copies: 1, availableWhen: { op: 'always' },
+        }],
+      },
+    },
+    clues: {
+      ...bundle.clues,
+      clue_bbbbbbbb: { ...markerClue, clueId: 'clue_bbbbbbbb' },
+      clue_cccccccc: { ...markerClue, clueId: 'clue_cccccccc' },
+      clue_dddddddd: markerClue,
+    },
+  };
+  const authorization = context({
+    assignedRoleId: 'role_aaaaaaaa',
+    assignedRoleIds: new Set(['role_aaaaaaaa', 'role_bbbbbbbb']),
+    activeStageId: 'stage_aaaaaaaa',
+    reachedStageIds: new Set(['stage_aaaaaaaa']),
+    roomHeldClueIds: new Set(['clue_cccccccc', 'clue_dddddddd']),
+  });
+  const candidates = deriveInvestigationCandidates(
+    viewerBundle,
+    'stage_aaaaaaaa',
+    authorization,
+    [
+      { assignedRoleId: 'role_aaaaaaaa', heldClueIds: new Set() },
+      { assignedRoleId: 'role_bbbbbbbb', heldClueIds: new Set(['clue_dddddddd']) },
+    ],
+    new Set(),
+  );
+
+  assert.deepEqual(candidates.roomLocationIds, ['loc_aaaaaaaa', 'loc_bbbbbbbb']);
+  assert.deepEqual(candidates.actorLocationIds, []);
+  assert.deepEqual(candidates.roomClueIdsByLocation.loc_aaaaaaaa, ['clue_aaaaaaaa']);
+  assert.deepEqual(candidates.roomClueIdsByLocation.loc_bbbbbbbb, ['clue_bbbbbbbb']);
+  assert.equal(candidates.roomClueIdsByLocation.loc_cccccccc, undefined);
+});
+
+test('investigation candidates filter held clues before fallback and fixed sequence', () => {
+  const extraClue = {
+    ...bundle.clues.clue_aaaaaaaa,
+    clueId: 'clue_bbbbbbbb',
+    faces: [],
+  };
+  const restrictedBundle: BlindBundle = {
+    ...bundle,
+    stages: {
+      stage_aaaaaaaa: {
+        ...bundle.stages.stage_aaaaaaaa,
+        allowedActions: ['search'],
+        locationIds: ['loc_aaaaaaaa', 'loc_bbbbbbbb'],
+        investigationFlow: {
+          locationSelection: {
+            mode: 'vote', scope: 'room_scoped', resolution: 'plurality_all_cast',
+            tieBreak: 'seat_cursor_choice',
+          },
+          turnOrder: { mode: 'seat_order' },
+          clueDeal: { mode: 'verified_pool_order', commit: 'one_per_turn' },
+          acquisitionLimit: { scope: 'stage', perPlayer: 1 },
+          publicationDuty: {
+            predicate: 'round_scoped_private_holding_count', maxPrivateCount: 1,
+            action: 'publish_one_held', blockedActions: ['vote_location', 'search'],
+          },
+          roleRestrictions: [{
+            principalRoleId: 'role_aaaaaaaa',
+            restrictedLocationIds: ['loc_aaaaaaaa'],
+            restrictedClueIds: ['clue_aaaaaaaa'],
+            mode: 'deny_unless_only_remaining_eligible',
+          }],
+        },
+      },
+    },
+    locations: {
+      loc_aaaaaaaa: {
+        ...bundle.locations.loc_aaaaaaaa,
+        searchPolicy: { ...bundle.locations.loc_aaaaaaaa.searchPolicy, mode: 'fixed_sequence' },
+        cluePool: [
+          { clueId: 'clue_aaaaaaaa', order: 1, copies: 1, availableWhen: { op: 'always' } },
+          { clueId: 'clue_bbbbbbbb', order: 2, copies: 1, availableWhen: { op: 'always' } },
+        ],
+      },
+      loc_bbbbbbbb: {
+        ...bundle.locations.loc_aaaaaaaa,
+        locationId: 'loc_bbbbbbbb',
+        cluePool: [{
+          clueId: 'clue_cccccccc', order: 1, copies: 1, availableWhen: { op: 'always' },
+        }],
+      },
+    },
+    clues: {
+      ...bundle.clues,
+      clue_bbbbbbbb: extraClue,
+      clue_cccccccc: { ...extraClue, clueId: 'clue_cccccccc' },
+    },
+  };
+  const authorization = context({
+    assignedRoleId: 'role_aaaaaaaa',
+    assignedRoleIds: new Set(['role_aaaaaaaa']),
+    activeStageId: 'stage_aaaaaaaa',
+    reachedStageIds: new Set(['stage_aaaaaaaa']),
+  });
+  const initial = deriveInvestigationCandidates(
+    restrictedBundle,
+    'stage_aaaaaaaa',
+    authorization,
+    [{ assignedRoleId: 'role_aaaaaaaa', heldClueIds: new Set() }],
+    new Set(),
+  );
+  assert.deepEqual(initial.roomLocationIds, ['loc_bbbbbbbb']);
+  assert.deepEqual(initial.actorLocationIds, ['loc_bbbbbbbb']);
+  assert.deepEqual(initial.roomClueIdsByLocation.loc_aaaaaaaa, [
+    'clue_aaaaaaaa', 'clue_bbbbbbbb',
+  ]);
+  assert.deepEqual(initial.actorClueIdsByLocation.loc_aaaaaaaa, ['clue_bbbbbbbb']);
+  assert.deepEqual(
+    projectAvailableLocations(restrictedBundle, authorization, {
+      clueIdsByLocation: initial.actorClueIdsByLocation,
+    }).find((location) => location.locationId === 'loc_aaaaaaaa')?.clueChoices,
+    [{ clueId: 'clue_bbbbbbbb', number: 2 }],
+  );
+
+  const heldContext = {
+    ...authorization,
+    roomHeldClueIds: new Set(['clue_bbbbbbbb', 'clue_cccccccc']),
+  };
+  const fallback = deriveInvestigationCandidates(
+    restrictedBundle,
+    'stage_aaaaaaaa',
+    heldContext,
+    [{ assignedRoleId: 'role_aaaaaaaa', heldClueIds: new Set() }],
+    new Set(),
+  );
+  assert.deepEqual(fallback.roomLocationIds, ['loc_aaaaaaaa']);
+  assert.deepEqual(fallback.actorLocationIds, ['loc_aaaaaaaa']);
+  assert.deepEqual(fallback.roomClueIdsByLocation.loc_aaaaaaaa, ['clue_aaaaaaaa']);
+  assert.deepEqual(fallback.actorClueIdsByLocation.loc_aaaaaaaa, ['clue_aaaaaaaa']);
+});
+
 test('unjoined and unassigned viewers receive no role content', () => {
   assert.equal(projectLobby(bundle, context({ joined: false })), null);
   const lobby = projectLobby(bundle, context());
@@ -177,6 +466,67 @@ test('unjoined and unassigned viewers receive no role content', () => {
   assert.equal(JSON.stringify(lobby).includes(ROLE_A_CANARY), false);
   assert.equal(JSON.stringify(lobby).includes(ROLE_B_CANARY), false);
   assert.equal(JSON.stringify(lobby).includes(HOST_CANARY), false);
+});
+
+test('verified player rules are visible to joined members without widening other content', () => {
+  const guideBundle: BlindBundle = {
+    ...bundle,
+    sources: {
+      src_aaaaaaaa: {
+        sourceId: 'src_aaaaaaaa',
+        mediaType: 'application/pdf',
+        sha256: 'sha256:synthetic',
+        byteLength: 1,
+        sourceClass: { kind: 'player_rules', subjectId: null },
+        classification: { status: 'verified', method: 'review', confidence: 1 },
+        pages: [{
+          pageId: 'page_aaaaaaaa', index: 0, width: 1, height: 1, rotation: 0,
+          sha256: `sha256:${'a'.repeat(64)}`,
+        }],
+      },
+    },
+    contentBlocks: {
+      ...bundle.contentBlocks,
+      cnt_99999999: {
+        contentId: 'cnt_99999999',
+        kind: 'text',
+        payload: { text: PLAYER_GUIDE_CANARY },
+        assetIds: [],
+        classification: {
+          level: 'L1', compartments: [], taintSourceIds: ['src_aaaaaaaa'],
+        },
+        visibility: {
+          default: 'deny',
+          grants: [{
+            principal: { kind: 'room_member', subjectId: null },
+            when: { op: 'always' },
+          }],
+        },
+        trace: {
+          evidence: [{
+            sourceId: 'src_aaaaaaaa',
+            pageId: 'page_aaaaaaaa',
+            region: { unit: 'normalized', x: 0, y: 0, width: 1, height: 1 },
+            side: 'single',
+            readingOrder: 1,
+          }],
+          ocrExtractionId: null,
+          reviewStatus: 'verified',
+        },
+      },
+    },
+  };
+  assert.equal(JSON.stringify(projectPlayerGuide(guideBundle, context())).includes(PLAYER_GUIDE_CANARY), true);
+  assert.deepEqual(projectPlayerGuide(guideBundle, context({ joined: false })), []);
+  assert.deepEqual(projectPlayerGuide({
+    ...guideBundle,
+    sources: {
+      src_aaaaaaaa: {
+        ...guideBundle.sources.src_aaaaaaaa,
+        classification: { status: 'proposed', method: 'ocr', confidence: 1 },
+      },
+    },
+  }, context()), []);
 });
 
 test('each assignee receives only that role and never host material', () => {
@@ -240,6 +590,76 @@ test('L3 content is denied even when presented with a system-only grant', () => 
   );
 });
 
+test('ending resolution stays denied until the room is completed', () => {
+  const resolutionContentId = 'cnt_99999999';
+  const resolutionBundle: BlindBundle = {
+    ...bundle,
+    sources: {
+      ...bundle.sources,
+      src_99999999: {
+        sourceId: 'src_99999999',
+        mediaType: 'image/png',
+        sha256: `sha256:${'9'.repeat(64)}`,
+        byteLength: 1,
+        sourceClass: { kind: 'solution', subjectId: null },
+        classification: { status: 'verified', method: 'review', confidence: 1 },
+        pages: [{
+          pageId: 'page_99999999', index: 0, width: 1, height: 1, rotation: 0,
+          sha256: `sha256:${'8'.repeat(64)}`,
+        }],
+      },
+    },
+    assets: {
+      ...bundle.assets,
+      asset_99999999: { assetId: 'asset_99999999', sourceIds: ['src_99999999'] },
+    },
+    contentBlocks: {
+      ...bundle.contentBlocks,
+      [resolutionContentId]: {
+        contentId: resolutionContentId,
+        kind: 'image',
+        payload: {},
+        assetIds: ['asset_99999999'],
+        classification: {
+          level: 'L3', compartments: [], taintSourceIds: ['src_99999999'],
+        },
+        visibility: {
+          default: 'deny',
+          grants: [{ principal: { kind: 'system_only', subjectId: null }, when: { op: 'session_completed' } }],
+        },
+        trace: {
+          evidence: [{
+            sourceId: 'src_99999999', pageId: 'page_99999999',
+            region: { unit: 'normalized', x: 0, y: 0, width: 1, height: 1 },
+            side: 'single', readingOrder: 0,
+          }],
+          ocrExtractionId: null,
+          reviewStatus: 'verified',
+        },
+      },
+    },
+    hostPack: {
+      resolutionSections: [{
+        sectionId: 'section_99999999',
+        contentIds: [resolutionContentId],
+        releaseId: 'release_99999999',
+      }],
+      releasePlan: [{
+        releaseId: 'release_99999999',
+        contentIds: [resolutionContentId],
+        when: { op: 'session_completed' },
+      }],
+    },
+  };
+  const running = context({ sessionCompleted: false });
+  const completed = context({ sessionCompleted: true });
+  assert.deepEqual(projectReleasedResolution(resolutionBundle, running), []);
+  assert.equal(canProjectImageContent(resolutionBundle, resolutionContentId, running), false);
+  assert.equal(projectReleasedResolution(resolutionBundle, completed).length, 1);
+  assert.equal(canProjectImageContent(resolutionBundle, resolutionContentId, completed), true);
+  assert.equal(canReadContent(resolutionBundle.contentBlocks[resolutionContentId], completed), false);
+});
+
 test('locations and held clues follow stage and ownership state', () => {
   const assigned = context({
     assignedRoleId: 'role_aaaaaaaa',
@@ -263,10 +683,152 @@ test('locations and held clues follow stage and ownership state', () => {
   assert.equal(JSON.stringify(projectVisibleClues(bundle, holder)).includes(CLUE_CANARY), true);
   assert.equal(projectVisibleClues(bundle, holder)[0].isHeld, true);
   assert.equal(projectVisibleClues(bundle, holder)[0].isPublished, false);
+  const mandatoryBundle: BlindBundle = {
+    ...bundle,
+    clues: {
+      ...bundle.clues,
+      clue_aaaaaaaa: {
+        ...bundle.clues.clue_aaaaaaaa,
+        publication: {
+          ...bundle.clues.clue_aaaaaaaa.publication,
+          allowed: true,
+          revealedFaceIds: ['face_aaaaaaaa'],
+          duty: { mode: 'mandatory_on_acquire' },
+        },
+      },
+    },
+  };
+  assert.equal(projectVisibleClues(mandatoryBundle, holder)[0].publicationRequired, true);
+  assert.equal(projectVisibleClues(mandatoryBundle, {
+    ...holder,
+    publishedClueIds: new Set(['clue_aaaaaaaa']),
+  })[0].publicationRequired, false);
   assert.equal(JSON.stringify(projectVisibleClues(bundle, context({
     ...assigned,
     assignedRoleId: 'role_bbbbbbbb',
   }))).includes(CLUE_CANARY), false);
+});
+
+test('published clues are projected directly to every joined room member', () => {
+  const publicClueBundle: BlindBundle = {
+    ...bundle,
+    contentBlocks: {
+      ...bundle.contentBlocks,
+      cnt_eeeeeeee: {
+        ...bundle.contentBlocks.cnt_eeeeeeee,
+        visibility: {
+          default: 'deny',
+          grants: [{
+            principal: { kind: 'room_after_event', subjectId: null },
+            when: { op: 'clue_published', clueId: 'clue_aaaaaaaa' },
+          }],
+        },
+      },
+    },
+    clues: {
+      ...bundle.clues,
+      clue_aaaaaaaa: {
+        ...bundle.clues.clue_aaaaaaaa,
+        publication: {
+          ...bundle.clues.clue_aaaaaaaa.publication,
+          allowed: true,
+          revealedFaceIds: ['face_aaaaaaaa'],
+        },
+      },
+    },
+  };
+  const published = context({
+    assignedRoleId: null,
+    assignedRoleIds: new Set(['role_aaaaaaaa']),
+    roomHeldClueIds: new Set(['clue_aaaaaaaa']),
+    publishedClueIds: new Set(['clue_aaaaaaaa']),
+  });
+  const projection = projectVisibleClues(publicClueBundle, published);
+  assert.equal(projection.length, 1);
+  assert.equal(projection[0].isPublished, true);
+  assert.equal(JSON.stringify(projection).includes(CLUE_CANARY), true);
+  assert.deepEqual(projectVisibleClues(publicClueBundle, { ...published, joined: false }), []);
+});
+
+test('direct image projection denies a readable but unrevealed clue face', () => {
+  const publishedImage = (contentId: string, assetId: string): ContentBlock => ({
+    contentId,
+    kind: 'image',
+    payload: {},
+    assetIds: [assetId],
+    classification: { level: 'L2', compartments: ['clue:clue_aaaaaaaa'] },
+    visibility: {
+      default: 'deny',
+      grants: [{
+        principal: { kind: 'room_after_event', subjectId: null },
+        when: { op: 'clue_published', clueId: 'clue_aaaaaaaa' },
+      }],
+    },
+    trace: {
+      evidence: [{
+        sourceId: 'src_aaaaaaaa',
+        pageId: 'page_aaaaaaaa',
+        region: { unit: 'normalized', x: 0, y: 0, width: 1, height: 1 },
+        side: 'single',
+        readingOrder: 1,
+      }],
+      ocrExtractionId: null,
+      reviewStatus: 'verified',
+    },
+  });
+  const imageBundle: BlindBundle = {
+    ...bundle,
+    assets: {
+      asset_aaaaaaaa: { assetId: 'asset_aaaaaaaa', sourceIds: ['src_aaaaaaaa'] },
+      asset_bbbbbbbb: { assetId: 'asset_bbbbbbbb', sourceIds: ['src_aaaaaaaa'] },
+    },
+    contentBlocks: {
+      ...bundle.contentBlocks,
+      cnt_11111111: publishedImage('cnt_11111111', 'asset_aaaaaaaa'),
+      cnt_22222222: publishedImage('cnt_22222222', 'asset_bbbbbbbb'),
+    },
+    clues: {
+      ...bundle.clues,
+      clue_aaaaaaaa: {
+        ...bundle.clues.clue_aaaaaaaa,
+        faces: [{
+          faceId: 'face_aaaaaaaa', side: 'front', assetIds: ['asset_aaaaaaaa'],
+          contentIds: ['cnt_11111111'], revealWhen: { op: 'not', arg: { op: 'always' } },
+        }, {
+          faceId: 'face_bbbbbbbb', side: 'back', assetIds: ['asset_bbbbbbbb'],
+          contentIds: ['cnt_22222222'], revealWhen: { op: 'not', arg: { op: 'always' } },
+        }],
+        publication: {
+          allowed: true,
+          publishWhen: { op: 'clue_held', clueId: 'clue_aaaaaaaa' },
+          revealedFaceIds: ['face_aaaaaaaa'],
+        },
+      },
+    },
+  };
+  const published = context({
+    roomHeldClueIds: new Set(['clue_aaaaaaaa']),
+    publishedClueIds: new Set(['clue_aaaaaaaa']),
+  });
+
+  assert.equal(canReadContent(imageBundle.contentBlocks.cnt_22222222, published), true);
+  assert.equal(canProjectImageContent(imageBundle, 'cnt_11111111', published), true);
+  assert.equal(canProjectImageContent(imageBundle, 'cnt_22222222', published), false);
+
+  const bothFacesRevealed: BlindBundle = {
+    ...imageBundle,
+    clues: {
+      ...imageBundle.clues,
+      clue_aaaaaaaa: {
+        ...imageBundle.clues.clue_aaaaaaaa,
+        publication: {
+          ...imageBundle.clues.clue_aaaaaaaa.publication,
+          revealedFaceIds: ['face_aaaaaaaa', 'face_bbbbbbbb'],
+        },
+      },
+    },
+  };
+  assert.equal(canProjectImageContent(bothFacesRevealed, 'cnt_22222222', published), true);
 });
 
 test('eligible host releases are derived without exposing host content', () => {

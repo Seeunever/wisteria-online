@@ -112,7 +112,21 @@ def valid_bundle() -> dict[str, object]:
             }
         },
         "assets": {
-            "asset_aaaaaaaa": {"assetId": "asset_aaaaaaaa", "sourceIds": ["src_aaaaaaaa"]}
+            "asset_aaaaaaaa": {
+                "assetId": "asset_aaaaaaaa",
+                "sourceIds": ["src_aaaaaaaa"],
+                "pageObjects": [
+                    {
+                        "sourceId": "src_aaaaaaaa",
+                        "pageId": "page_aaaaaaaa",
+                        "mediaType": "image/webp",
+                        "sha256": digest,
+                        "byteLength": 1,
+                        "width": 1,
+                        "height": 1,
+                    }
+                ],
+            }
         },
         "contentBlocks": {
             "cnt_aaaaaaaa": content_block("cnt_aaaaaaaa", "L1", False),
@@ -503,7 +517,7 @@ class SafeToolTests(unittest.TestCase):
         )
         self.assertEqual(
             bundle["script"]["canonicalPayloadHash"],
-            "sha256:14649031b33022a12f8b113c6b54d028d035d4a7ea6faf8a414ed3479bcb9fa5",
+            "sha256:3bf7c94ab9ef18aa1325dd4bc829fb5f8eca324b05385e781e4d81d3dbe7fee1",
         )
         self.assertEqual(
             validate_bundle.canonical_json({"z": -0.0, "a": [1.0, 0.000001, "雪"]}),

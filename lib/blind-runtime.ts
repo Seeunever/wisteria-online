@@ -3,8 +3,9 @@ export type BlindCondition =
   | { op: 'all' | 'any'; args: BlindCondition[] }
   | { op: 'not'; arg: BlindCondition }
   | { op: 'stage_active' | 'stage_reached'; stageId: string }
+  | { op: 'investigation_complete' | 'completion_vote_satisfied'; stageId: string }
   | { op: 'role_assigned'; roleId: string }
-  | { op: 'clue_held' | 'clue_published'; clueId: string }
+  | { op: 'clue_held' | 'clue_published' | 'clue_acquired_in_room'; clueId: string }
   | { op: 'host_release'; releaseId: string };
 
 type Principal = {
@@ -39,6 +40,7 @@ export type ContentBlock = {
   classification: {
     level: 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
     compartments: string[];
+    taintSourceIds?: string[];
   };
   visibility: {
     default: 'deny';
@@ -62,15 +64,30 @@ export type BlindBundle = {
     mediaType: string;
     sha256: string;
     byteLength: number;
+    sourceClass?: { kind: string; subjectId: string | null };
+    classification?: { status: string; method: string; confidence: number };
     pages: Array<{
       pageId: string;
       index: number;
       width: number;
       height: number;
       rotation: number;
+      sha256: string;
     }>;
   }>;
-  assets: Record<string, { assetId: string; sourceIds: string[] }>;
+  assets: Record<string, {
+    assetId: string;
+    sourceIds: string[];
+    pageObjects?: Array<{
+      sourceId: string;
+      pageId: string;
+      mediaType: 'image/webp';
+      sha256: string;
+      byteLength: number;
+      width: number;
+      height: number;
+    }>;
+  }>;
   contentBlocks: Record<string, ContentBlock>;
   stages: Record<string, {
     stageId: string;
@@ -80,6 +97,39 @@ export type BlindBundle = {
     completeWhen: BlindCondition;
     allowedActions: string[];
     locationIds: string[];
+    investigationFlow?: {
+      locationSelection: {
+        mode: 'vote';
+        scope: 'room_scoped' | 'stage_scoped';
+        resolution: 'plurality_all_cast';
+        tieBreak: 'seat_cursor_choice';
+      };
+      turnOrder: { mode: 'seat_order' };
+      clueDeal: {
+        mode: 'verified_pool_order';
+        commit: 'one_per_turn';
+      };
+      acquisitionLimit: {
+        scope: 'stage';
+        perPlayer: number;
+      };
+      publicationDuty: {
+        predicate: 'round_scoped_private_holding_count';
+        maxPrivateCount: number;
+        action: 'publish_one_held';
+        blockedActions: Array<'vote_location' | 'search'>;
+      };
+      roleRestrictions?: Array<{
+        principalRoleId: string;
+        restrictedLocationIds: string[];
+        restrictedClueIds: string[];
+        mode: 'deny_unless_only_remaining_eligible';
+      }>;
+      completion?: {
+        mode: 'consent_vote';
+        exhaustive: 'per_player_quota';
+      };
+    };
   }>;
   locations: Record<string, {
     locationId: string;
@@ -113,9 +163,15 @@ export type BlindBundle = {
       allowed: boolean;
       publishWhen: BlindCondition;
       revealedFaceIds: string[];
+      duty?: { mode: 'mandatory_on_acquire' };
     };
   }>;
   hostPack: {
+    resolutionSections?: Array<{
+      sectionId: string;
+      contentIds: string[];
+      releaseId: string | null;
+    }>;
     releasePlan: Array<{
       releaseId: string;
       contentIds: string[];
@@ -148,6 +204,19 @@ export type AuthorizationContext = {
   publishedClueIds: ReadonlySet<string>;
   hostReleaseIds: ReadonlySet<string>;
   sessionCompleted: boolean;
+  investigationCompletedStageIds?: ReadonlySet<string>;
+};
+
+export type InvestigationViewerState = {
+  assignedRoleId: string;
+  heldClueIds: ReadonlySet<string>;
+};
+
+export type InvestigationCandidates = {
+  roomLocationIds: string[];
+  actorLocationIds: string[];
+  roomClueIdsByLocation: Record<string, string[]>;
+  actorClueIdsByLocation: Record<string, string[]>;
 };
 
 export type ProjectedContent =
@@ -177,6 +246,23 @@ export function evaluateStageFlowCondition(
     condition,
     simulatedAssignedRoleIds ? { ...context, assignedRoleIds: simulatedAssignedRoleIds } : context,
   );
+}
+
+/**
+ * Evaluate a gate that applies to the current viewer. In viewer-scoped rules,
+ * role_assigned means "this viewer has the role", not "someone in the room has it".
+ * Room-wide stage and release gates must continue to use evaluateCondition.
+ */
+export function evaluateViewerCondition(
+  condition: BlindCondition,
+  context: AuthorizationContext,
+) {
+  return evaluateCondition(condition, {
+    ...context,
+    assignedRoleIds: context.assignedRoleId
+      ? new Set([context.assignedRoleId])
+      : new Set(),
+  });
 }
 
 function evaluateConditionState(
@@ -213,9 +299,14 @@ function evaluateConditionState(
       return context.activeStageId === condition.stageId;
     case 'stage_reached':
       return context.reachedStageIds.has(condition.stageId);
+    case 'investigation_complete':
+    case 'completion_vote_satisfied':
+      return context.investigationCompletedStageIds?.has(condition.stageId) ?? false;
     case 'role_assigned':
       return context.assignedRoleIds.has(condition.roleId);
     case 'clue_held':
+      return context.heldClueIds.has(condition.clueId);
+    case 'clue_acquired_in_room':
       return context.roomHeldClueIds.has(condition.clueId);
     case 'clue_published':
       return context.publishedClueIds.has(condition.clueId);
@@ -224,6 +315,125 @@ function evaluateConditionState(
     default:
       return null;
   }
+}
+
+export function applyFallbackRestriction(
+  candidateIds: string[],
+  restriction: { restrictedLocationIds?: string[]; restrictedClueIds?: string[] } | undefined,
+  kind: 'location' | 'clue',
+) {
+  if (!restriction) return candidateIds;
+  const restricted = new Set(
+    kind === 'location' ? restriction.restrictedLocationIds : restriction.restrictedClueIds,
+  );
+  const preferred = candidateIds.filter((id) => !restricted.has(id));
+  return preferred.length ? preferred : candidateIds;
+}
+
+function emptyInvestigationCandidates(): InvestigationCandidates {
+  return {
+    roomLocationIds: [],
+    actorLocationIds: [],
+    roomClueIdsByLocation: {},
+    actorClueIdsByLocation: {},
+  };
+}
+
+/**
+ * Derive investigation choices from viewer-scoped authorization. Room-wide
+ * candidates are the ordered union of every assigned viewer's choices; an
+ * individual viewer never inherits another member's role or held clues.
+ */
+export function deriveInvestigationCandidates(
+  bundle: BlindBundle,
+  stageId: string,
+  context: AuthorizationContext,
+  viewers: InvestigationViewerState[],
+  searchedLocationIds: ReadonlySet<string>,
+): InvestigationCandidates {
+  const stage = bundle.stages[stageId];
+  const flow = stage?.investigationFlow;
+  if (!stage || !flow || !context.joined) return emptyInvestigationCandidates();
+
+  const roomLocationIds = new Set<string>();
+  const roomClueIdsByLocation = new Map<string, Set<string>>();
+  let actorLocationIds: string[] = [];
+  let actorClueIdsByLocation: Record<string, string[]> = {};
+
+  for (const viewer of viewers) {
+    const viewerContext: AuthorizationContext = {
+      ...context,
+      assignedRoleId: viewer.assignedRoleId,
+      assignedRoleIds: new Set([viewer.assignedRoleId]),
+      heldClueIds: viewer.heldClueIds,
+    };
+    const restriction = flow.roleRestrictions?.find(
+      (item) => item.principalRoleId === viewer.assignedRoleId,
+    );
+    const viewerClueIdsByLocation: Record<string, string[]> = {};
+    const viewerLocationIds: string[] = [];
+
+    for (const locationId of stage.locationIds) {
+      const location = bundle.locations[locationId];
+      if (!location || !evaluateViewerCondition(location.availableWhen, viewerContext)) continue;
+
+      const remainingClueIds = location.cluePool
+        .filter((entry) => (
+          !context.roomHeldClueIds.has(entry.clueId)
+          && evaluateViewerCondition(entry.availableWhen, viewerContext)
+          && Boolean(bundle.clues[entry.clueId])
+          && evaluateViewerCondition(bundle.clues[entry.clueId].acquisition.when, viewerContext)
+        ))
+        .sort((left, right) => left.order - right.order)
+        .map((entry) => entry.clueId);
+      if (remainingClueIds.length === 0) continue;
+
+      const roomClues = roomClueIdsByLocation.get(locationId) ?? new Set<string>();
+      for (const clueId of remainingClueIds) roomClues.add(clueId);
+      roomClueIdsByLocation.set(locationId, roomClues);
+
+      const unrestrictedClueIds = applyFallbackRestriction(
+        remainingClueIds,
+        restriction,
+        'clue',
+      );
+      viewerClueIdsByLocation[locationId] = location.searchPolicy.mode === 'fixed_sequence'
+        ? unrestrictedClueIds.slice(0, 1)
+        : unrestrictedClueIds;
+      if (viewerClueIdsByLocation[locationId].length > 0
+        && !searchedLocationIds.has(locationId)) {
+        viewerLocationIds.push(locationId);
+      }
+    }
+
+    const eligibleViewerLocationIds = applyFallbackRestriction(
+      viewerLocationIds,
+      restriction,
+      'location',
+    );
+    for (const locationId of eligibleViewerLocationIds) roomLocationIds.add(locationId);
+    if (viewer.assignedRoleId === context.assignedRoleId) {
+      actorLocationIds = eligibleViewerLocationIds;
+      actorClueIdsByLocation = viewerClueIdsByLocation;
+    }
+  }
+
+  const orderedRoomClueIdsByLocation: Record<string, string[]> = {};
+  for (const locationId of stage.locationIds) {
+    const candidates = roomClueIdsByLocation.get(locationId);
+    if (!candidates) continue;
+    orderedRoomClueIdsByLocation[locationId] = bundle.locations[locationId].cluePool
+      .filter((entry) => candidates.has(entry.clueId))
+      .sort((left, right) => left.order - right.order)
+      .map((entry) => entry.clueId);
+  }
+
+  return {
+    roomLocationIds: stage.locationIds.filter((locationId) => roomLocationIds.has(locationId)),
+    actorLocationIds,
+    roomClueIdsByLocation: orderedRoomClueIdsByLocation,
+    actorClueIdsByLocation,
+  };
 }
 
 function principalMatches(principal: Principal, context: AuthorizationContext) {
@@ -353,23 +563,118 @@ export function projectAssignedRole(bundle: BlindBundle, context: AuthorizationC
   };
 }
 
-export function projectAvailableLocations(bundle: BlindBundle, context: AuthorizationContext) {
+export function projectPlayerGuide(bundle: BlindBundle, context: AuthorizationContext) {
+  if (!context.joined) return [];
+  return Object.values(bundle.contentBlocks)
+    .filter((block) => {
+      const sourceIds = block.classification.taintSourceIds;
+      return block.classification.level === 'L1'
+        && Array.isArray(sourceIds)
+        && sourceIds.length > 0
+        && sourceIds.every((sourceId) => {
+          const source = bundle.sources[sourceId];
+          return source?.sourceClass?.kind === 'player_rules'
+            && source.classification?.status === 'verified';
+        });
+    })
+    .sort((left, right) => {
+      const leftEvidence = left.trace.evidence[0];
+      const rightEvidence = right.trace.evidence[0];
+      const leftPage = leftEvidence
+        ? bundle.sources[leftEvidence.sourceId]?.pages.find((page) => page.pageId === leftEvidence.pageId)
+        : undefined;
+      const rightPage = rightEvidence
+        ? bundle.sources[rightEvidence.sourceId]?.pages.find((page) => page.pageId === rightEvidence.pageId)
+        : undefined;
+      return (leftPage?.index ?? Number.MAX_SAFE_INTEGER) - (rightPage?.index ?? Number.MAX_SAFE_INTEGER)
+        || (leftEvidence?.readingOrder ?? Number.MAX_SAFE_INTEGER)
+          - (rightEvidence?.readingOrder ?? Number.MAX_SAFE_INTEGER);
+    })
+    .map((block) => readableContent(bundle, block.contentId, context))
+    .filter((content): content is ProjectedContent => content !== null);
+}
+
+function releasedResolutionContent(
+  bundle: BlindBundle,
+  contentId: string,
+): ProjectedContent | null {
+  const block = bundle.contentBlocks[contentId];
+  if (
+    !block
+    || block.classification.level !== 'L3'
+    || block.visibility.default !== 'deny'
+    || block.visibility.grants.length === 0
+    || block.visibility.grants.some((grant) => grant.principal.kind !== 'system_only')
+    || !Array.isArray(block.classification.taintSourceIds)
+    || block.classification.taintSourceIds.length === 0
+    || block.classification.taintSourceIds.some(
+      (sourceId) => bundle.sources[sourceId]?.sourceClass?.kind !== 'solution',
+    )
+  ) return null;
+  if (block.kind === 'text' && 'text' in block.payload) {
+    return { kind: 'text', text: block.payload.text };
+  }
+  if (block.kind === 'image' && block.assetIds.length > 0 && block.trace.evidence.length > 0) {
+    return { kind: 'image', contentId: block.contentId, parts: block.trace.evidence.length };
+  }
+  return null;
+}
+
+export function projectReleasedResolution(bundle: BlindBundle, context: AuthorizationContext) {
+  if (!context.joined || !context.sessionCompleted) return [];
+  const eligible = withEligibleHostReleases(bundle, context);
+  const releases = new Map(
+    bundle.hostPack.releasePlan.map((release) => [release.releaseId, release]),
+  );
+  return (bundle.hostPack.resolutionSections ?? [])
+    .filter((section) => (
+      typeof section.releaseId === 'string'
+      && eligible.hostReleaseIds.has(section.releaseId)
+      && releases.has(section.releaseId)
+      && section.contentIds.every(
+        (contentId) => releases.get(section.releaseId as string)?.contentIds.includes(contentId),
+      )
+    ))
+    .map((section) => ({
+      sectionId: section.sectionId,
+      content: section.contentIds
+        .map((contentId) => releasedResolutionContent(bundle, contentId))
+        .filter((content): content is ProjectedContent => content !== null),
+    }))
+    .filter((section) => section.content.length > 0);
+}
+
+export function projectAvailableLocations(
+  bundle: BlindBundle,
+  context: AuthorizationContext,
+  options?: { clueIdsByLocation?: Readonly<Record<string, readonly string[]>> },
+) {
   if (!context.joined || !context.assignedRoleId) return [];
   return Object.values(bundle.locations)
-    .filter((location) => evaluateCondition(location.availableWhen, context))
+    .filter((location) => evaluateViewerCondition(location.availableWhen, context))
     .map((location) => {
       const availableClues = location.cluePool
         .filter((entry) => (
           !context.roomHeldClueIds.has(entry.clueId)
-          && evaluateCondition(entry.availableWhen, context)
+          && evaluateViewerCondition(entry.availableWhen, context)
           && Boolean(bundle.clues[entry.clueId])
-          && evaluateCondition(bundle.clues[entry.clueId].acquisition.when, context)
+          && evaluateViewerCondition(bundle.clues[entry.clueId].acquisition.when, context)
         ))
         .sort((left, right) => left.order - right.order)
-        .map((entry) => ({ clueId: entry.clueId, number: entry.order }));
-      const clueChoices = location.searchPolicy.mode === 'fixed_sequence'
-        ? availableClues.slice(0, 1)
-        : availableClues;
+        .map((entry, index) => ({
+          clueId: entry.clueId,
+          number: Number.isInteger(entry.order) && entry.order > 0 ? entry.order : index + 1,
+        }));
+      const projectedClueIds = options?.clueIdsByLocation
+        ? options.clueIdsByLocation[location.locationId] ?? []
+        : null;
+      const clueChoices = projectedClueIds
+        ? projectedClueIds
+          .map((clueId) => availableClues.find((choice) => choice.clueId === clueId))
+          .filter((choice): choice is { clueId: string; number: number } => Boolean(choice))
+        : location.searchPolicy.mode === 'fixed_sequence'
+          ? availableClues.slice(0, 1)
+          : availableClues;
       return {
         locationId: location.locationId,
         name: readableText(bundle, location.nameContentId, context),
@@ -380,7 +685,7 @@ export function projectAvailableLocations(bundle: BlindBundle, context: Authoriz
 }
 
 export function projectVisibleClues(bundle: BlindBundle, context: AuthorizationContext) {
-  if (!context.joined || !context.assignedRoleId) return [];
+  if (!context.joined) return [];
   return Object.values(bundle.clues)
     .filter((clue) => (
       context.heldClueIds.has(clue.clueId) || context.publishedClueIds.has(clue.clueId)
@@ -392,9 +697,18 @@ export function projectVisibleClues(bundle: BlindBundle, context: AuthorizationC
       canPublish: clue.publication.allowed
         && context.heldClueIds.has(clue.clueId)
         && !context.publishedClueIds.has(clue.clueId)
-        && evaluateCondition(clue.publication.publishWhen, context),
+        && evaluateViewerCondition(clue.publication.publishWhen, context),
+      publicationRequired: clue.publication.duty?.mode === 'mandatory_on_acquire'
+        && context.heldClueIds.has(clue.clueId)
+        && !context.publishedClueIds.has(clue.clueId),
       faces: clue.faces
-        .filter((face) => evaluateCondition(face.revealWhen, context))
+        .filter((face) => (
+          evaluateViewerCondition(face.revealWhen, context)
+          || (
+            context.publishedClueIds.has(clue.clueId)
+            && clue.publication.revealedFaceIds.includes(face.faceId)
+          )
+        ))
         .map((face) => ({
           faceId: face.faceId,
           side: face.side,
@@ -405,6 +719,42 @@ export function projectVisibleClues(bundle: BlindBundle, context: AuthorizationC
         .filter((face) => face.content.length > 0),
     }))
     .filter((clue) => clue.faces.length > 0);
+}
+
+function projectionContainsImage(
+  content: readonly ProjectedContent[],
+  contentId: string,
+) {
+  return content.some((item) => item.kind === 'image' && item.contentId === contentId);
+}
+
+/**
+ * Image bytes are served only when the same content id is present in a current,
+ * authorized UI projection. A readable grant alone cannot reveal an unrevealed
+ * clue face through the direct content endpoint.
+ */
+export function canProjectImageContent(
+  bundle: BlindBundle,
+  contentId: string,
+  context: AuthorizationContext,
+) {
+  if (bundle.contentBlocks[contentId]?.kind !== 'image') return false;
+
+  const lobby = projectLobby(bundle, context);
+  if (lobby?.roles.some((role) => projectionContainsImage(role.introduction, contentId))) {
+    return true;
+  }
+  const assignedRole = projectAssignedRole(bundle, context);
+  if (assignedRole?.sections.some(
+    (section) => projectionContainsImage(section.content, contentId),
+  )) return true;
+  if (projectionContainsImage(projectPlayerGuide(bundle, context), contentId)) return true;
+  if (projectReleasedResolution(bundle, context).some(
+    (section) => projectionContainsImage(section.content, contentId),
+  )) return true;
+  return projectVisibleClues(bundle, context).some((clue) => clue.faces.some(
+    (face) => projectionContainsImage(face.content, contentId),
+  ));
 }
 
 export function withEligibleHostReleases(bundle: BlindBundle, context: AuthorizationContext) {

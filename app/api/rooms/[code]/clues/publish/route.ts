@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUser } from '@/lib/auth';
-import { evaluateCondition, type AuthorizationContext } from '@/lib/blind-runtime';
+import { evaluateViewerCondition, type AuthorizationContext } from '@/lib/blind-runtime';
 import { loadFrozenBundle } from '@/lib/packs';
 import { getRoomForMember, publishHeldClue } from '@/lib/rooms';
 import { assertSameOrigin } from '@/lib/security';
@@ -38,14 +38,21 @@ export async function POST(
       publishedClueIds: new Set(
         room.clues.filter((item) => item.publishedAt !== null).map((item) => item.clueId),
       ),
+      investigationCompletedStageIds: new Set(room.investigationCompletedStageIds),
       hostReleaseIds: new Set(room.hostReleaseIds),
       sessionCompleted: false,
     };
     if (
       !clue?.publication.allowed
       || !context.heldClueIds.has(clueId)
-      || !evaluateCondition(clue.publication.publishWhen, context)
-      || !publishHeldClue(code, user.id, clueId)
+      || !evaluateViewerCondition(clue.publication.publishWhen, context)
+      || !publishHeldClue({
+        code,
+        userId: user.id,
+        versionId: room.versionId,
+        authorizationVersion: room.authorizationVersion,
+        clueId,
+      })
     ) throw new Error('PUBLISH_REJECTED');
     return NextResponse.redirect(new URL(`/rooms/${code}`, origin), 303);
   } catch {

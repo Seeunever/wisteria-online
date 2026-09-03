@@ -69,6 +69,9 @@ MAX_PRIVATE_INVENTORY_BYTES = 128 * 1024 * 1024
 PRIVATE_INVENTORY_SCHEMA = "blind-private-inventory/1.0"
 PRIVATE_INVENTORY_RELATIVE = Path("private") / "source-inventory.json"
 VAULT_BLOB_REF_PATTERN = re.compile(r"^vault:sources/src_[0-9a-f]{16}\.blob$")
+RENDERED_OBJECT_NAME_PATTERN = re.compile(
+    r"^src_[0-9a-f]{8,64}\.page_[0-9a-f]{8,64}\.webp$"
+)
 
 LEVEL_RANK = {"L0": 0, "L1": 1, "L2": 2, "L3": 3, "L4": 4}
 SOURCE_CEILING = {
@@ -99,12 +102,16 @@ CONDITION_OPS = {
     "not",
     "stage_active",
     "stage_reached",
+    "investigation_complete",
+    "completion_vote_satisfied",
     "role_assigned",
     "clue_held",
+    "clue_acquired_in_room",
     "clue_published",
     "host_release",
     "session_completed",
 }
+INVESTIGATION_VIEWER_LOCAL_CONDITION_OPS = {"role_assigned", "clue_held"}
 
 
 class Issues:
@@ -242,6 +249,33 @@ def _blob_digest_and_length(run_root: Path, blob_ref: Any) -> tuple[str, int]:
     return "sha256:" + digest.hexdigest(), total
 
 
+def _regular_digest_and_length(path: Path) -> tuple[str, int]:
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or int(before.st_size) > 10**13:
+            raise ValueError("PRIVATE_FILE_READ_FAILED")
+        digest = hashlib.sha256()
+        total = 0
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+                total += len(chunk)
+        after = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    current = path.stat()
+    if (
+        _stat_signature(before) != _stat_signature(after)
+        or _stat_signature(after) != _stat_signature(current)
+        or total != int(after.st_size)
+        or is_link_or_junction(path)
+    ):
+        raise ValueError("PRIVATE_FILE_READ_FAILED")
+    return "sha256:" + digest.hexdigest(), total
+
+
 def inventory_matches_bundle(run_root: Path, bundle: Any) -> bool:
     """Fail closed unless the private manifest, vault blobs, and bundle agree."""
     try:
@@ -318,6 +352,41 @@ def inventory_matches_bundle(run_root: Path, bundle: Any) -> bool:
                     return False
             else:
                 return False
+        bundle_assets = bundle.get("assets")
+        if not isinstance(bundle_assets, dict):
+            return False
+        expected_rendered: dict[str, dict[str, Any]] = {}
+        for asset in bundle_assets.values():
+            if not isinstance(asset, dict):
+                return False
+            page_objects = asset.get("pageObjects", [])
+            if not isinstance(page_objects, list):
+                return False
+            for page_object in page_objects:
+                if not isinstance(page_object, dict):
+                    return False
+                name = f"{page_object.get('sourceId')}.{page_object.get('pageId')}.webp"
+                if not RENDERED_OBJECT_NAME_PATTERN.fullmatch(name) or name in expected_rendered:
+                    return False
+                expected_rendered[name] = page_object
+        rendered_root = run_root / "vault" / "rendered"
+        if expected_rendered:
+            if not rendered_root.is_dir() or is_link_or_junction(rendered_root):
+                return False
+            actual_names: set[str] = set()
+            with os.scandir(rendered_root) as entries:
+                for entry in entries:
+                    if entry.is_symlink() or not entry.is_file(follow_symlinks=False):
+                        return False
+                    actual_names.add(entry.name)
+            if actual_names != set(expected_rendered):
+                return False
+            for name, page_object in expected_rendered.items():
+                digest, byte_length = _regular_digest_and_length(rendered_root / name)
+                if digest != page_object.get("sha256") or byte_length != page_object.get("byteLength"):
+                    return False
+        elif rendered_root.exists():
+            return False
         return True
     except (OSError, ValueError, OverflowError):
         return False
@@ -511,9 +580,13 @@ def condition_required_events(condition: Any, depth: int = 0, negated: bool = Fa
         return set()
     if op in {"stage_active", "stage_reached"} and isinstance(condition.get("stageId"), str):
         return {condition["stageId"]}
+    if op in {"investigation_complete", "completion_vote_satisfied"} and isinstance(
+        condition.get("stageId"), str
+    ):
+        return {f"investigation:{condition['stageId']}"}
     if op == "host_release" and isinstance(condition.get("releaseId"), str):
         return {condition["releaseId"]}
-    if op == "clue_held" and isinstance(condition.get("clueId"), str):
+    if op in {"clue_held", "clue_acquired_in_room"} and isinstance(condition.get("clueId"), str):
         return {f"held:{condition['clueId']}"}
     if op == "clue_published" and isinstance(condition.get("clueId"), str):
         return {f"published:{condition['clueId']}"}
@@ -526,6 +599,26 @@ def condition_required_events(condition: Any, depth: int = 0, negated: bool = Fa
             result.intersection_update(refs)
         return result
     return set()
+
+
+def condition_contains_ops(
+    condition: Any,
+    target_ops: set[str],
+    depth: int = 0,
+) -> bool:
+    if depth > 20 or not isinstance(condition, dict):
+        return False
+    op = condition.get("op")
+    if op in target_ops:
+        return True
+    if op in {"all", "any"}:
+        args = condition.get("args")
+        return isinstance(args, list) and any(
+            condition_contains_ops(item, target_ops, depth + 1) for item in args
+        )
+    if op == "not":
+        return condition_contains_ops(condition.get("arg"), target_ops, depth + 1)
+    return False
 
 
 def graph_has_cycle(graph: dict[str, set[str]]) -> bool:
@@ -590,7 +683,12 @@ def validate_condition(
         return validate_condition(
             condition.get("arg"), issues, ref, stage_ids, role_ids, clue_ids, release_ids, depth + 1
         )
-    if op in {"stage_active", "stage_reached"}:
+    if op in {
+        "stage_active",
+        "stage_reached",
+        "investigation_complete",
+        "completion_vote_satisfied",
+    }:
         if set(condition) != {"op", "stageId"}:
             issues.add("INVALID_CONDITION", ref=ref)
             return False
@@ -600,7 +698,7 @@ def validate_condition(
             issues.add("INVALID_CONDITION", ref=ref)
             return False
         valid = valid_ref(condition.get("roleId"), role_ids)
-    elif op in {"clue_held", "clue_published"}:
+    elif op in {"clue_held", "clue_published", "clue_acquired_in_room"}:
         if set(condition) != {"op", "clueId"}:
             issues.add("INVALID_CONDITION", ref=ref)
             return False
@@ -793,12 +891,13 @@ def validate_bundle(bundle: Any) -> dict[str, Any]:
     assets = as_map(bundle.get("assets"), "INVALID_ASSETS_COLLECTION", issues)
     asset_ids: set[str] = set()
     asset_sources: dict[str, set[str]] = {}
+    rendered_page_pairs: set[tuple[str, str]] = set()
     for key, asset in assets.items():
         if not valid_id(key, "asset") or not isinstance(asset, dict) or asset.get("assetId") != key:
             issues.add("INVALID_ASSET_ID", ref=key)
             continue
         asset_ids.add(key)
-        if not has_exact_keys(asset, {"assetId", "sourceIds"}):
+        if not has_exact_keys(asset, {"assetId", "sourceIds"}, {"pageObjects"}):
             issues.add("INVALID_ASSET_SOURCE", ref=key)
         refs = asset.get("sourceIds")
         if not valid_unique_refs(refs, source_ids, require_nonempty=True):
@@ -806,6 +905,55 @@ def validate_bundle(bundle: Any) -> dict[str, Any]:
             asset_sources[key] = set()
         else:
             asset_sources[key] = set(refs)
+        page_objects = asset.get("pageObjects", [])
+        if not isinstance(page_objects, list):
+            issues.add("INVALID_RENDERED_PAGE", ref=key)
+            continue
+        for page_object in page_objects:
+            if not isinstance(page_object, dict) or not has_exact_keys(
+                page_object,
+                {"sourceId", "pageId", "mediaType", "sha256", "byteLength", "width", "height"},
+            ):
+                issues.add("INVALID_RENDERED_PAGE", ref=key)
+                continue
+            source_id = page_object.get("sourceId")
+            page_id = page_object.get("pageId")
+            if not valid_id(source_id, "src") or not valid_id(page_id, "page"):
+                issues.add("INVALID_RENDERED_PAGE", ref=key)
+                continue
+            pair = (source_id, page_id)
+            source = sources.get(source_id)
+            source_pages = source.get("pages") if isinstance(source, dict) else None
+            source_page = next(
+                (page for page in source_pages if isinstance(page, dict) and page.get("pageId") == page_id),
+                None,
+            ) if isinstance(source_pages, list) else None
+            if (
+                source_id not in asset_sources.get(key, set())
+                or pair in rendered_page_pairs
+                or page_object.get("mediaType") != "image/webp"
+                or not valid_hash(page_object.get("sha256"))
+                or not bounded_int(page_object.get("byteLength"), 1)
+                or not bounded_int(page_object.get("width"), 1)
+                or not bounded_int(page_object.get("height"), 1)
+                or not isinstance(source, dict)
+                or not isinstance(source_page, dict)
+                or source_page.get("width") != page_object.get("width")
+                or source_page.get("height") != page_object.get("height")
+                or source_page.get("rotation") != 0
+            ):
+                issues.add("INVALID_RENDERED_PAGE", ref=key)
+                continue
+            rendered_page_pairs.add(pair)
+    expected_rendered_page_pairs = {
+        (source_id, page.get("pageId"))
+        for source_id, source in sources.items()
+        if isinstance(source, dict)
+        for page in source.get("pages", [])
+        if isinstance(page, dict) and valid_id(page.get("pageId"), "page")
+    }
+    if rendered_page_pairs != expected_rendered_page_pairs:
+        issues.add("INVALID_RENDERED_PAGE_COVERAGE")
 
     stages = as_map(bundle.get("stages"), "INVALID_STAGES_COLLECTION", issues)
     roles = as_map(bundle.get("roles"), "INVALID_ROLES_COLLECTION", issues)
@@ -828,7 +976,14 @@ def validate_bundle(bundle: Any) -> dict[str, Any]:
     } if isinstance(release_plan_pre, list) else set()
     held_event_nodes = {f"held:{clue_id}" for clue_id in clue_ids}
     published_event_nodes = {f"published:{clue_id}" for clue_id in clue_ids}
-    known_event_nodes = stage_ids | release_ids | held_event_nodes | published_event_nodes
+    investigation_event_nodes = {f"investigation:{stage_id}" for stage_id in stage_ids}
+    known_event_nodes = (
+        stage_ids
+        | release_ids
+        | held_event_nodes
+        | published_event_nodes
+        | investigation_event_nodes
+    )
     tracked_condition_dependencies: list[set[str]] = []
 
     def validate_and_track_condition(condition: Any, ref: str | None) -> bool:
@@ -871,6 +1026,35 @@ def validate_bundle(bundle: Any) -> dict[str, Any]:
     content_levels: dict[str, str] = {}
     content_asset_refs: dict[str, set[str]] = {}
     content_compartments: dict[str, set[str]] = {}
+    published_face_content_by_clue: dict[str, set[str]] = {}
+    for clue_id, clue in clues.items():
+        if clue_id not in clue_ids or not isinstance(clue, dict):
+            continue
+        publication = clue.get("publication")
+        if not isinstance(publication, dict) or publication.get("allowed") is not True:
+            continue
+        revealed_face_ids = publication.get("revealedFaceIds")
+        if not isinstance(revealed_face_ids, list):
+            continue
+        revealed_face_id_set = {
+            face_id for face_id in revealed_face_ids if isinstance(face_id, str)
+        }
+        published_content_ids: set[str] = set()
+        faces = clue.get("faces")
+        for face in faces if isinstance(faces, list) else []:
+            if (
+                not isinstance(face, dict)
+                or face.get("faceId") not in revealed_face_id_set
+            ):
+                continue
+            face_content_ids = face.get("contentIds")
+            if isinstance(face_content_ids, list):
+                published_content_ids.update(
+                    content_id
+                    for content_id in face_content_ids
+                    if isinstance(content_id, str)
+                )
+        published_face_content_by_clue[clue_id] = published_content_ids
     policy_ids: set[str] = set()
     for key, block in content.items():
         if key not in content_ids or not isinstance(block, dict) or block.get("contentId") != key:
@@ -1043,18 +1227,41 @@ def validate_bundle(bundle: Any) -> dict[str, Any]:
                     item.split(":", 1)[1] for item in compartment_set if item.startswith("stage:")
                 }
                 principal_subjects = {subject_id} if isinstance(subject_id, str) else set()
-                required_stages = condition_required_events(grant.get("when")) & stage_ids
-                if isinstance(principal_kind, str) and principal_kind in {
-                    "room_member", "room_after_event"
-                } and (
-                    role_compartments or clue_compartments or not stage_compartments
+                required_events = condition_required_events(grant.get("when"))
+                required_stages = required_events & stage_ids
+                required_published_clues = {
+                    item.removeprefix("published:")
+                    for item in required_events
+                    if item.startswith("published:")
+                }
+                published_room_grant = (
+                    principal_kind == "room_after_event"
+                    and bool(clue_compartments)
+                    and not role_compartments
+                    and clue_compartments == required_published_clues
+                    and all(
+                        key in published_face_content_by_clue.get(clue_id, set())
+                        for clue_id in clue_compartments
+                    )
+                )
+                if (
+                    principal_kind == "room_member"
+                    and (role_compartments or clue_compartments or not stage_compartments)
+                ) or (
+                    principal_kind == "room_after_event"
+                    and not published_room_grant
+                    and (role_compartments or clue_compartments or not stage_compartments)
                 ):
                     issues.add("COMPARTMENT_TOO_BROAD", ref=key)
                 compartment_mismatch = (
                     (principal_kind == "role_assignee" and role_compartments != principal_subjects)
                     or (principal_kind == "clue_holder" and clue_compartments != principal_subjects)
                     or (bool(role_compartments) and principal_kind != "role_assignee")
-                    or (bool(clue_compartments) and principal_kind != "clue_holder")
+                    or (
+                        bool(clue_compartments)
+                        and principal_kind != "clue_holder"
+                        and not published_room_grant
+                    )
                     or (bool(role_compartments) and bool(clue_compartments))
                     or not stage_compartments.issubset(required_stages)
                 )
@@ -1089,6 +1296,7 @@ def validate_bundle(bundle: Any) -> dict[str, Any]:
                 "locationIds",
                 "evidence",
             },
+            {"investigationFlow"},
         ):
             issues.add("INVALID_STAGE_SHAPE", ref=key)
         sequence = stage.get("sequence")
@@ -1116,6 +1324,136 @@ def validate_bundle(bundle: Any) -> dict[str, Any]:
             or any(action not in ALLOWED_ACTIONS for action in actions)
         ):
             issues.add("INVALID_ALLOWED_ACTION", ref=key)
+        investigation_flow = stage.get("investigationFlow")
+        if investigation_flow is not None:
+            valid_flow = has_exact_keys(
+                investigation_flow,
+                {
+                    "locationSelection",
+                    "turnOrder",
+                    "clueDeal",
+                    "acquisitionLimit",
+                    "publicationDuty",
+                },
+                {"roleRestrictions", "completion"},
+            )
+            selection = investigation_flow.get("locationSelection") if isinstance(investigation_flow, dict) else None
+            turn_order = investigation_flow.get("turnOrder") if isinstance(investigation_flow, dict) else None
+            clue_deal = investigation_flow.get("clueDeal") if isinstance(investigation_flow, dict) else None
+            acquisition_limit = investigation_flow.get("acquisitionLimit") \
+                if isinstance(investigation_flow, dict) else None
+            publication_duty = investigation_flow.get("publicationDuty") if isinstance(investigation_flow, dict) else None
+            valid_flow = valid_flow and has_exact_keys(
+                selection,
+                {"mode", "scope", "resolution", "tieBreak"},
+            ) and selection.get("mode") == "vote" and selection.get("scope") in {
+                "room_scoped", "stage_scoped"
+            } and selection.get("resolution") == "plurality_all_cast" \
+                and selection.get("tieBreak") == "seat_cursor_choice"
+            valid_flow = valid_flow and has_exact_keys(turn_order, {"mode"}) \
+                and turn_order.get("mode") == "seat_order"
+            valid_flow = valid_flow and has_exact_keys(clue_deal, {"mode", "commit"}) \
+                and clue_deal.get("mode") == "verified_pool_order" \
+                and clue_deal.get("commit") == "one_per_turn"
+            valid_flow = valid_flow and has_exact_keys(acquisition_limit, {"scope", "perPlayer"}) \
+                and acquisition_limit.get("scope") == "stage" \
+                and bounded_int(acquisition_limit.get("perPlayer"), 1, 128)
+            valid_flow = valid_flow and has_exact_keys(
+                publication_duty,
+                {"predicate", "maxPrivateCount", "action", "blockedActions"},
+            ) and publication_duty.get("predicate") == "round_scoped_private_holding_count" \
+                and bounded_int(publication_duty.get("maxPrivateCount"), 0) \
+                and publication_duty.get("action") == "publish_one_held"
+            blocked_actions = publication_duty.get("blockedActions") if isinstance(publication_duty, dict) else None
+            valid_flow = valid_flow and isinstance(blocked_actions, list) \
+                and bool(blocked_actions) \
+                and len(blocked_actions) == len(set(blocked_actions)) \
+                and all(action in {"vote_location", "search"} for action in blocked_actions)
+            role_restrictions = investigation_flow.get("roleRestrictions") \
+                if isinstance(investigation_flow, dict) else None
+            if role_restrictions is not None:
+                restriction_roles: set[str] = set()
+                valid_restrictions = isinstance(role_restrictions, list)
+                for restriction in role_restrictions if isinstance(role_restrictions, list) else []:
+                    if not has_exact_keys(
+                        restriction,
+                        {"principalRoleId", "restrictedLocationIds", "restrictedClueIds", "mode"},
+                    ):
+                        valid_restrictions = False
+                        continue
+                    principal_role_id = restriction.get("principalRoleId")
+                    restricted_locations = restriction.get("restrictedLocationIds")
+                    restricted_clues = restriction.get("restrictedClueIds")
+                    if (
+                        not valid_ref(principal_role_id, role_ids)
+                        or principal_role_id in restriction_roles
+                        or not valid_unique_refs(restricted_locations, location_ids)
+                        or not valid_unique_refs(restricted_clues, clue_ids)
+                        or not (restricted_locations or restricted_clues)
+                        or restriction.get("mode") != "deny_unless_only_remaining_eligible"
+                    ):
+                        valid_restrictions = False
+                    if isinstance(principal_role_id, str):
+                        restriction_roles.add(principal_role_id)
+                valid_flow = valid_flow and valid_restrictions
+            completion = investigation_flow.get("completion") \
+                if isinstance(investigation_flow, dict) else None
+            if completion is not None:
+                valid_completion = has_exact_keys(completion, {"mode", "exhaustive"}) \
+                    and completion.get("mode") == "consent_vote" \
+                    and completion.get("exhaustive") == "per_player_quota" \
+                    and f"investigation:{key}" in condition_required_events(
+                        stage.get("completeWhen")
+                    )
+                valid_flow = valid_flow and valid_completion
+            flow_has_host_dealt_location = any(
+                isinstance(location_id, str)
+                and isinstance(locations.get(location_id), dict)
+                and isinstance(locations[location_id].get("searchPolicy"), dict)
+                and locations[location_id]["searchPolicy"].get("mode") == "host_dealt"
+                for location_id in stage_locations
+            ) if isinstance(stage_locations, list) else False
+            flow_has_empty_clue_pool = any(
+                not isinstance(location_id, str)
+                or not isinstance(locations.get(location_id), dict)
+                or not isinstance(locations[location_id].get("cluePool"), list)
+                or not locations[location_id]["cluePool"]
+                for location_id in stage_locations
+            ) if isinstance(stage_locations, list) else True
+            flow_conditions: list[Any] = []
+            for location_id in stage_locations if isinstance(stage_locations, list) else []:
+                location = locations.get(location_id)
+                if not isinstance(location, dict):
+                    continue
+                flow_conditions.append(location.get("availableWhen"))
+                clue_pool = location.get("cluePool")
+                for pool_entry in clue_pool if isinstance(clue_pool, list) else []:
+                    if not isinstance(pool_entry, dict):
+                        continue
+                    flow_conditions.append(pool_entry.get("availableWhen"))
+                    clue = clues.get(pool_entry.get("clueId"))
+                    if not isinstance(clue, dict):
+                        continue
+                    acquisition = clue.get("acquisition")
+                    if isinstance(acquisition, dict):
+                        flow_conditions.append(acquisition.get("when"))
+            flow_has_viewer_local_condition = any(
+                condition_contains_ops(
+                    condition,
+                    INVESTIGATION_VIEWER_LOCAL_CONDITION_OPS,
+                )
+                for condition in flow_conditions
+            )
+            valid_flow = (
+                valid_flow
+                and not flow_has_host_dealt_location
+                and not flow_has_empty_clue_pool
+                and not flow_has_viewer_local_condition
+            )
+            if "search" not in (actions or []) or not stage_locations:
+                valid_flow = False
+            if not valid_flow:
+                issues.add("INVALID_INVESTIGATION_FLOW", ref=key)
         stage_evidence = stage.get("evidence")
         if not isinstance(stage_evidence, list) or not stage_evidence or any(
             not valid_evidence(item, source_ids, page_owner) for item in stage_evidence
@@ -1378,7 +1716,11 @@ def validate_bundle(bundle: Any) -> dict[str, Any]:
             issues.add("INVALID_ACQUISITION", ref=key)
         validate_and_track_condition(acquisition.get("when"), key)
         publication = clue.get("publication") if isinstance(clue.get("publication"), dict) else {}
-        if not has_exact_keys(publication, {"allowed", "publishWhen", "revealedFaceIds", "evidence"}) or not isinstance(
+        if not has_exact_keys(
+            publication,
+            {"allowed", "publishWhen", "revealedFaceIds", "evidence"},
+            {"duty"},
+        ) or not isinstance(
             publication.get("allowed"), bool
         ):
             issues.add("INVALID_PUBLICATION", ref=key)
@@ -1396,6 +1738,14 @@ def validate_bundle(bundle: Any) -> dict[str, Any]:
             publication.get("allowed") is False and bool(revealed_faces)
         ):
             issues.add("INVALID_REVEALED_FACE", ref=key)
+        duty = publication.get("duty")
+        if duty is not None and (
+            not has_exact_keys(duty, {"mode"})
+            or duty.get("mode") != "mandatory_on_acquire"
+            or publication.get("allowed") is not True
+            or not revealed_faces
+        ):
+            issues.add("INVALID_PUBLICATION_DUTY", ref=key)
         publication_evidence = publication.get("evidence")
         if not isinstance(publication_evidence, list) or any(
             not valid_evidence(item, source_ids, page_owner) for item in publication_evidence

@@ -48,6 +48,7 @@ export default async function CluePage({ params }: CluePageProps) {
     publishedClueIds: new Set(
       room.clues.filter((clue) => clue.publishedAt !== null).map((clue) => clue.clueId),
     ),
+    investigationCompletedStageIds: new Set(room.investigationCompletedStageIds),
     hostReleaseIds: new Set(room.hostReleaseIds),
     sessionCompleted: room.status === 'completed',
   };
@@ -71,7 +72,11 @@ export default async function CluePage({ params }: CluePageProps) {
           <p className="eyebrow">PRIVATE CLUE</p>
           <h1 id="clue-reader-title">线索已打开</h1>
           <p className="clue-visibility">
-            {clue.isPublished ? '这张线索已经对全房间公开。' : '这张线索目前只有你能看到。'}
+            {clue.isPublished
+              ? '这张线索已经对全房间公开。'
+              : clue.publicationRequired
+                ? '这张线索按游戏规则必须公开；公开前不能继续受限制的调查操作。'
+                : '这张线索目前只有你能看到。'}
           </p>
           <article className="clue-content-card">
             {clue.faces.map((face) => (
@@ -87,7 +92,9 @@ export default async function CluePage({ params }: CluePageProps) {
             ))}
           </article>
           <div className="clue-decision-bar" aria-label="线索可见性选择">
-            <Link className="clue-hide-button" href={`/rooms/${room.code}`}>暂时隐藏</Link>
+            {!clue.publicationRequired ? (
+              <Link className="clue-hide-button" href={`/rooms/${room.code}`}>暂时隐藏</Link>
+            ) : null}
             {clue.canPublish ? (
               <form action={`/api/rooms/${room.code}/clues/publish`} method="post">
                 <input type="hidden" name="clueId" value={clue.clueId} />

@@ -1,6 +1,6 @@
 ---
 name: blind-player
-description: Ingest scanned or image/PDF murder-mystery game packs into structured, versioned data and safely install them in player websites while keeping story content out of the player's conversation, logs, public files, and unauthorized runtime views. Use for inventorying, OCRing, pairing, validating, importing, publishing, or QAing role books, clue cards, rules, and solution materials for a player who intends to play.
+description: Ingest scanned or image/PDF murder-mystery game packs with a page-first private manifest, validate them as structured versioned data, and safely install them in player websites while keeping story content out of the player's conversation, logs, public files, and unauthorized runtime views. Use for inventorying, selectively OCRing, pairing, validating, importing, publishing, or QAing role books, clue cards, rules, and solution materials for a player who intends to play.
 metadata:
   short-description: Blind-safe murder-mystery ingestion
 ---
@@ -17,11 +17,24 @@ This skill has one mode: `blind-player`. Treat the requester as a player who mus
 - The player-facing thread may receive only the canonical safe-report JSON bytes emitted directly by `scripts/validate_safe_report.py`. Never reopen the report after validation. Return validator stdout verbatim with no heading, prose, translation, paraphrase, readiness label, inferred field, or surrounding commentary.
 - Visibility is default-deny and provenance-based. A model summary or rewrite cannot gain a wider audience than its strictest source.
 - Do not place raw or derived story material in Git, `public/`, static assets, browser bundles, source maps, snapshots, logs, analytics, shared search indexes, or unprotected temporary directories.
-- If an isolated worker/subagent is available, it alone may inspect semantic content. It writes the canonical private artifact to a predetermined vault path and returns only a fixed process code. It must not author the player-facing safe report; the player thread runs the included deterministic validator against that artifact. Do not ask it for a narrative summary.
+- Preserve original pages or verified crops as the default player payload. Full-pack OCR is not a prerequisite for a playable import and must not be the default discovery strategy.
+- If an isolated worker/subagent is available, it alone may inspect semantic content. It may write only the fixed private page map and canonical bundle artifacts, then returns a fixed process code. It must not author the player-facing safe report; the player thread runs the included deterministic validator against the bundle. Do not ask it for a narrative summary.
 - If isolation, private storage, or server-side authorization cannot be established, stop with `BLOCKED_SPOILER_SAFETY`.
 
 Read [references/spoiler-firewall.md](references/spoiler-firewall.md) for all ingestion runs. Read [references/bundle-schema.md](references/bundle-schema.md) when extracting or validating data. For mixed scanned-image/PDF folders, also read [references/image-folder-format.md](references/image-folder-format.md). Read [references/runtime-access.md](references/runtime-access.md) only when importing the pack into a player application.
 When the user asks for a playable website, long-lived hosting, or deployment, also read [references/website-publication.md](references/website-publication.md).
+For every real scanned or image-based pack, read [references/page-first-ingestion.md](references/page-first-ingestion.md) before semantic inspection.
+Before authoring or compiling `private/page-map.json`, read [references/page-map-schema.md](references/page-map-schema.md).
+
+## Runtime preflight
+
+Before initializing a run, resolve one real Python 3 interpreter and use that exact executable for every phase.
+
+- Do not assume `python` is usable on Windows; Microsoft Store aliases can exit without running the script.
+- Verify the selected interpreter with a fixed UTF-8 stdout self-test and a supported version before it touches any source.
+- Prefer the bundled workspace interpreter when available. Otherwise, on Windows, `py -3 -X utf8` is acceptable after the self-test passes.
+- If no verified interpreter is available, stop with `PYTHON_RUNTIME_UNAVAILABLE`; do not misreport this as an OCR, bundle, or spoiler-classification failure.
+- Included tools already own their fixed private process logs. Do not redirect their stdout or stderr onto the same paths from an outer shell wrapper.
 
 ## Workspace preflight
 
@@ -38,16 +51,17 @@ When the user asks for a playable website, long-lived hosting, or deployment, al
 ## Workflow
 
 1. Initialize the private run root, then run `scripts/inventory_sources.py`. It copies regular sources into the run's immutable opaque vault while hashing, verifies a final source-tree snapshot, and creates the fixed-path private manifest and safe inventory report. Run `validate_safe_report.py` and use only its stdout; never read or quote the report file directly.
-2. Have the isolated worker inspect only the committed vault copies named by the private manifest, never the mutable source directory. Run `scripts/extract_ocr.py --run-root RUN_ROOT` inside the isolated local OCR environment; it re-hashes each vault blob and writes only `vault/ocr.json` plus a private process log. Preserve page order and original pixels; make private normalized previews only when needed.
-3. Extract into the canonical bundle. Every field must use an opaque ID, carry source-region evidence, inherit source taint, and record separate confidence for OCR, classification, ordering, pairing, and semantic mapping.
-4. Classify unknown or ambiguous material as `L4 QUARANTINED`. Path and filename heuristics may propose a class but can never verify one.
-5. Pair clue faces by printed identifiers and verified visual evidence, never by array order or neighboring filenames. Do not assume front is public or back is secret.
-6. Encode release rules with the finite condition AST in the schema. Never store executable JavaScript, SQL, templates, or free-form expressions.
-7. The worker writes only `RUN_ROOT/vault/bundle.json`. In the player thread, run `scripts/validate_bundle.py --run-root RUN_ROOT`; it must cross-check every bundle source against `private/source-inventory.json` and the immutable vault blob before producing the fixed validation report. Then run `scripts/validate_safe_report.py` on that report and use only validator stdout. Never accept a worker-authored or merely schema-shaped report.
-8. Freeze only a bundle with zero blocking issues. Any content, OCR, pairing, rule, or visibility correction creates a new immutable version.
-9. When integrating with an app, generate server-side projections from the private bundle. Never send future-stage, other-role, unrevealed, or host-only content to the browser.
-10. Before publication, run an isolated multi-identity runtime access matrix against the actual validated pack and the production build. Bundle validation alone is not a publication result.
-11. Treat pack installation and application deployment as separate gates. Install append-only; publish only after the runtime matrix passes and the user authorizes the production mutation.
+2. Have the isolated worker inspect only the committed vault copies named by the private manifest, never the mutable source directory. Build `private/page-map.json` using the page-first reference: establish roles, stages, player rules, end-of-game resolution, locations, clue groups, faces, crops, ordering, and release behavior while preserving original pages. Use filename, folder, adjacency, and packet hints only as proposals; verify each audience boundary from source regions. Never classify a whole container as player-visible when it mixes instructions with ending or answer material.
+3. Use targeted local OCR only for the smallest title, identifier, rule, or boundary regions that remain necessary. Run full `scripts/extract_ocr.py --run-root RUN_ROOT` only when page preservation plus targeted inspection cannot establish a required mapping. It re-hashes vault blobs and writes only `vault/ocr.json` plus its private process log.
+4. Run `scripts/build_page_bundle.py --run-root RUN_ROOT` to translate the fixed private page map into `vault/bundle.json`. The deterministic compiler generates opaque IDs, evidence, taint, grants, conditions, and canonical hashes without reinterpreting story content. The page map is an interpretation boundary, never a publishable artifact or an alternate authorization source.
+5. Classify unknown or ambiguous material as `L4 QUARANTINED`. Path and filename heuristics may propose a class but can never verify one.
+6. Pair clue faces by printed identifiers and verified visual evidence, never by array order or neighboring filenames. Do not assume front is public or back is secret.
+7. Encode release rules with the finite condition AST in the schema. Never store executable JavaScript, SQL, templates, or free-form expressions.
+8. In the player thread, run `scripts/validate_bundle.py --run-root RUN_ROOT`; it must cross-check every bundle source against `private/source-inventory.json` and the immutable vault blob before producing the fixed validation report. Then run `scripts/validate_safe_report.py` on that report and use only validator stdout. Never accept a worker-authored or merely schema-shaped report.
+9. Freeze only a bundle with zero blocking issues. Any page-map, crop, OCR, pairing, rule, or visibility correction creates a fresh run and new immutable version.
+10. When integrating with an app, generate server-side projections from the private bundle. Never send future-stage, other-role, unrevealed, or host-only content to the browser.
+11. Before publication, run an isolated multi-identity runtime access matrix against the actual validated pack and the production build. Bundle validation alone is not a publication result.
+12. Treat pack installation and application deployment as separate gates. Install append-only; publish only after the runtime matrix passes and the user authorizes the production mutation.
 
 ## Questions and progress updates
 
@@ -73,18 +87,21 @@ For a blocked run, return only a validator-produced safe-report JSON. If no safe
 ## Included pipeline tools
 
 ```text
-python scripts/init_run_root.py PRIVATE_RUN_ROOT
+VERIFIED_PYTHON scripts/init_run_root.py PRIVATE_RUN_ROOT
 
-python scripts/inventory_sources.py SOURCE --run-root PRIVATE_RUN_ROOT
+VERIFIED_PYTHON scripts/inventory_sources.py SOURCE --run-root PRIVATE_RUN_ROOT
 
-python scripts/validate_safe_report.py \
+VERIFIED_PYTHON scripts/validate_safe_report.py \
   --run-root PRIVATE_RUN_ROOT --report inventory
 
-python scripts/extract_ocr.py --run-root PRIVATE_RUN_ROOT
+# Optional only when targeted inspection is insufficient:
+VERIFIED_PYTHON scripts/extract_ocr.py --run-root PRIVATE_RUN_ROOT
 
-python scripts/validate_bundle.py --run-root PRIVATE_RUN_ROOT
+VERIFIED_PYTHON scripts/build_page_bundle.py --run-root PRIVATE_RUN_ROOT
 
-python scripts/validate_safe_report.py \
+VERIFIED_PYTHON scripts/validate_bundle.py --run-root PRIVATE_RUN_ROOT
+
+VERIFIED_PYTHON scripts/validate_safe_report.py \
   --run-root PRIVATE_RUN_ROOT --report validation
 ```
 

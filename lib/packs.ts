@@ -115,25 +115,44 @@ export function loadFrozenContentSource(versionId: string, contentId: string, pa
   }
   const source = bundle.sources[evidence.sourceId];
   const page = source?.pages.find((item) => item.pageId === evidence.pageId);
-  const assetAllowsSource = block.assetIds.some((assetId) => (
-    bundle.assets[assetId]?.sourceIds.includes(evidence.sourceId)
-  ));
+  const matchingAssets = block.assetIds
+    .map((assetId) => bundle.assets[assetId])
+    .filter((asset) => asset?.sourceIds.includes(evidence.sourceId));
+  const assetAllowsSource = matchingAssets.length > 0;
   if (!source || !page || !assetAllowsSource) throw new PackAccessError('PACK_NOT_AVAILABLE');
 
   try {
     const payloadPath = resolvePrivatePayload(row.payloadPath);
     const versionDirectory = path.dirname(payloadPath);
-    const candidate = path.join(versionDirectory, 'objects', `${evidence.sourceId}.source`);
+    const renderedPage = matchingAssets
+      .flatMap((asset) => asset.pageObjects ?? [])
+      .find((item) => item.sourceId === evidence.sourceId && item.pageId === evidence.pageId);
+    if (!renderedPage) {
+      throw new Error('RENDERED_PAGE_REQUIRED');
+    }
+    const candidate = path.join(
+      versionDirectory,
+      'objects',
+      `${evidence.sourceId}.${evidence.pageId}.webp`,
+    );
     const resolved = realpathSync(/* turbopackIgnore: true */ candidate);
     const relative = path.relative(versionDirectory, resolved);
     if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('OUTSIDE_PACK');
     const metadata = lstatSync(resolved);
-    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size !== source.byteLength) {
+    const expectedByteLength = renderedPage.byteLength;
+    const expectedHash = renderedPage.sha256;
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size !== expectedByteLength) {
       throw new Error('SOURCE_REJECTED');
     }
     const digest = createHash('sha256').update(readFileSync(resolved)).digest('hex');
-    if (`sha256:${digest}` !== source.sha256) throw new Error('SOURCE_REJECTED');
-    return { sourcePath: resolved, mediaType: source.mediaType, page, region: evidence.region };
+    if (`sha256:${digest}` !== expectedHash) throw new Error('SOURCE_REJECTED');
+    return {
+      sourcePath: resolved,
+      mediaType: renderedPage.mediaType,
+      inputPageIndex: 0,
+      page,
+      region: evidence.region,
+    };
   } catch (error) {
     if (error instanceof PackAccessError) throw error;
     throw new PackAccessError('PACK_STORAGE_REJECTED');

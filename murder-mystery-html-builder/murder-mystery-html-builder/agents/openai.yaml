@@ -1,0 +1,6 @@
+interface:
+  display_name: "剧本杀离线互动生成器"
+  short_description: "将本地剧本杀 PDF 和图片整理成可分享的离线互动 HTML"
+  default_prompt: "Use $murder-mystery-html-builder to turn this local script-game folder into a spoiler-safe offline interactive HTML."
+policy:
+  allow_implicit_invocation: true

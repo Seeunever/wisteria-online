@@ -28,6 +28,7 @@ const roleId = 'role_11111111';
 const stageId = 'stage_11111111';
 const locationIds = ['loc_11111111', 'loc_22222222', 'loc_33333333'];
 const clueIds = ['clue_11111111', 'clue_22222222', 'clue_33333333', 'clue_44444444'];
+const playerGuideSourceId = 'src_11111111';
 const hash = `sha256:${'1'.repeat(64)}`;
 
 function content(
@@ -56,6 +57,23 @@ const contentBlocks: BlindBundle['contentBlocks'] = {
   cnt_11111111: content('cnt_11111111', '手机布局测试剧本', 'L1', [], memberGrant),
   cnt_22222222: content('cnt_22222222', '测试玩家', 'L1', [], memberGrant),
   cnt_33333333: content('cnt_33333333', '仅用于布局验证的角色说明。', 'L1', [], memberGrant),
+  cnt_12121212: {
+    ...content('cnt_12121212', '合成游戏说明：先确认阶段，再选择允许调查的地点。', 'L1', [], memberGrant),
+    classification: {
+      level: 'L1', compartments: [], taintSourceIds: [playerGuideSourceId],
+    },
+    trace: {
+      evidence: [{
+        sourceId: playerGuideSourceId,
+        pageId: 'page_11111111',
+        region: { unit: 'normalized', x: 0, y: 0, width: 1, height: 1 },
+        side: 'single',
+        readingOrder: 1,
+      }],
+      ocrExtractionId: null,
+      reviewStatus: 'verified',
+    },
+  },
 };
 for (const index of locationIds.keys()) {
   const contentId = `cnt_${String(index + 4).repeat(8)}`;
@@ -75,7 +93,20 @@ for (const [index, clueId] of clueIds.entries()) {
 const bundle = {
   schemaVersion: 'blind-script/1.0',
   script: { versionId, titleContentId: 'cnt_11111111', canonicalPayloadHash: hash },
-  sources: {},
+  sources: {
+    [playerGuideSourceId]: {
+      sourceId: playerGuideSourceId,
+      mediaType: 'application/pdf',
+      sha256: hash,
+      byteLength: 1,
+      sourceClass: { kind: 'player_rules', subjectId: null },
+      classification: { status: 'verified', method: 'review', confidence: 1 },
+      pages: [{
+        pageId: 'page_11111111', index: 0, width: 1, height: 1, rotation: 0,
+        sha256: `sha256:${'1'.repeat(64)}`,
+      }],
+    },
+  },
   assets: {},
   contentBlocks,
   stages: {
@@ -87,6 +118,21 @@ const bundle = {
       completeWhen: { op: 'always' },
       allowedActions: ['search'],
       locationIds,
+      investigationFlow: {
+        locationSelection: {
+          mode: 'vote', scope: 'room_scoped', resolution: 'plurality_all_cast',
+          tieBreak: 'seat_cursor_choice',
+        },
+        turnOrder: { mode: 'seat_order' },
+        clueDeal: { mode: 'verified_pool_order', commit: 'one_per_turn' },
+        acquisitionLimit: { scope: 'stage', perPlayer: 1 },
+        publicationDuty: {
+          predicate: 'round_scoped_private_holding_count',
+          maxPrivateCount: 99,
+          action: 'publish_one_held',
+          blockedActions: ['vote_location', 'search'],
+        },
+      },
     },
   },
   locations: Object.fromEntries(locationIds.map((locationId, index) => ({
@@ -94,7 +140,7 @@ const bundle = {
     nameContentId: `cnt_${String(index + 4).repeat(8)}`,
     availableWhen: { op: 'stage_active', stageId },
     searchPolicy: {
-      mode: 'host_dealt', perPlayerLimit: 8, globalLimit: 8, resetAtStageIds: [],
+      mode: 'draw_without_replacement', perPlayerLimit: 8, globalLimit: 8, resetAtStageIds: [],
     },
     cluePool: clueIds.map((clueId, order) => ({
       clueId, order: order + 1, copies: 1, availableWhen: { op: 'always' },

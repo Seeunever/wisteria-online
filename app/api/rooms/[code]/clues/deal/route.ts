@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUser } from '@/lib/auth';
-import { evaluateCondition, type AuthorizationContext } from '@/lib/blind-runtime';
+import { evaluateViewerCondition, type AuthorizationContext } from '@/lib/blind-runtime';
 import { loadFrozenBundle } from '@/lib/packs';
 import { dealLocationClue, getRoomForMember } from '@/lib/rooms';
 import { assertSameOrigin } from '@/lib/security';
@@ -34,6 +34,7 @@ export async function POST(
     const location = bundle.locations[locationId];
     if (
       !stage?.allowedActions.includes('search')
+      || Boolean(stage.investigationFlow)
       || !location
       || location.searchPolicy.mode !== 'host_dealt'
       || !stage.locationIds.includes(locationId)
@@ -51,15 +52,16 @@ export async function POST(
       publishedClueIds: new Set(
         room.clues.filter((clue) => clue.publishedAt !== null).map((clue) => clue.clueId),
       ),
+      investigationCompletedStageIds: new Set(room.investigationCompletedStageIds),
       hostReleaseIds: new Set(room.hostReleaseIds),
       sessionCompleted: false,
     };
-    if (!evaluateCondition(location.availableWhen, context)) throw new Error('DEAL_REJECTED');
+    if (!evaluateViewerCondition(location.availableWhen, context)) throw new Error('DEAL_REJECTED');
     const eligibleClueIds = location.cluePool
       .filter((entry) => (
-        evaluateCondition(entry.availableWhen, context)
+        evaluateViewerCondition(entry.availableWhen, context)
         && Boolean(bundle.clues[entry.clueId])
-        && evaluateCondition(bundle.clues[entry.clueId].acquisition.when, context)
+        && evaluateViewerCondition(bundle.clues[entry.clueId].acquisition.when, context)
       ))
       .sort((left, right) => left.order - right.order)
       .map((entry) => entry.clueId);

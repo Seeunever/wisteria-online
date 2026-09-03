@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { getRequestUser } from '@/lib/auth';
-import { canReadContent, type AuthorizationContext } from '@/lib/blind-runtime';
+import { canProjectImageContent, type AuthorizationContext } from '@/lib/blind-runtime';
 import { loadFrozenBundle, loadFrozenContentSource } from '@/lib/packs';
 import { getRoomForMember } from '@/lib/rooms';
 
@@ -38,11 +38,12 @@ export async function GET(
       publishedClueIds: new Set(
         room.clues.filter((clue) => clue.publishedAt !== null).map((clue) => clue.clueId),
       ),
+      investigationCompletedStageIds: new Set(room.investigationCompletedStageIds),
       hostReleaseIds: new Set(room.hostReleaseIds),
       sessionCompleted: room.status === 'completed',
     };
     const block = bundle.contentBlocks[contentId];
-    if (!canReadContent(block, context) || block.kind !== 'image') return denied();
+    if (!canProjectImageContent(bundle, contentId, context) || block?.kind !== 'image') return denied();
     const rawPart = request.nextUrl.searchParams.get('part') ?? '0';
     if (!/^(0|[1-9][0-9]{0,3})$/.test(rawPart)) return denied();
     const content = loadFrozenContentSource(room.versionId, contentId, Number(rawPart));
@@ -58,7 +59,7 @@ export async function GET(
       Math.ceil((content.region.y + content.region.height) * content.page.height),
     );
     if (right <= left || bottom <= top) return denied();
-    const bytes = await sharp(content.sourcePath, { page: content.page.index, limitInputPixels: 100_000_000 })
+    const bytes = await sharp(content.sourcePath, { page: content.inputPageIndex, limitInputPixels: 100_000_000 })
       .rotate(content.page.rotation)
       .extract({ left, top, width: right - left, height: bottom - top })
       .webp({ quality: 90 })

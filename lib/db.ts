@@ -118,6 +118,61 @@ function initialize(database: DatabaseSync) {
       PRIMARY KEY(room_id, location_id, stage_id)
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS investigation_rounds (
+      room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+      stage_id TEXT NOT NULL,
+      round_number INTEGER NOT NULL CHECK (round_number > 0),
+      tie_break_membership_id TEXT NOT NULL REFERENCES memberships(id) ON DELETE CASCADE,
+      selected_location_id TEXT,
+      cursor_membership_id TEXT REFERENCES memberships(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      PRIMARY KEY(room_id, stage_id, round_number)
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS investigation_votes (
+      room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+      stage_id TEXT NOT NULL,
+      round_number INTEGER NOT NULL CHECK (round_number > 0),
+      membership_id TEXT NOT NULL REFERENCES memberships(id) ON DELETE CASCADE,
+      location_id TEXT NOT NULL,
+      voted_at INTEGER NOT NULL,
+      PRIMARY KEY(room_id, stage_id, round_number, membership_id),
+      FOREIGN KEY(room_id, stage_id, round_number)
+        REFERENCES investigation_rounds(room_id, stage_id, round_number) ON DELETE CASCADE
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS investigation_acquisitions (
+      room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+      clue_id TEXT NOT NULL,
+      stage_id TEXT NOT NULL,
+      round_number INTEGER NOT NULL CHECK (round_number > 0),
+      membership_id TEXT NOT NULL REFERENCES memberships(id) ON DELETE CASCADE,
+      acquired_at INTEGER NOT NULL,
+      PRIMARY KEY(room_id, clue_id),
+      FOREIGN KEY(room_id, clue_id)
+        REFERENCES clue_holdings(room_id, clue_id) ON DELETE CASCADE,
+      FOREIGN KEY(room_id, stage_id, round_number)
+        REFERENCES investigation_rounds(room_id, stage_id, round_number) ON DELETE CASCADE
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS investigation_completion_votes (
+      room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+      stage_id TEXT NOT NULL,
+      membership_id TEXT NOT NULL REFERENCES memberships(id) ON DELETE CASCADE,
+      authorization_version INTEGER NOT NULL CHECK (authorization_version > 0),
+      consent INTEGER NOT NULL CHECK (consent IN (0, 1)),
+      voted_at INTEGER NOT NULL,
+      PRIMARY KEY(room_id, stage_id, membership_id)
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS investigation_stage_completions (
+      room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+      stage_id TEXT NOT NULL,
+      completed_at INTEGER NOT NULL,
+      PRIMARY KEY(room_id, stage_id)
+    ) STRICT;
+
     CREATE TABLE IF NOT EXISTS room_host_releases (
       room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
       release_id TEXT NOT NULL,
@@ -137,6 +192,15 @@ function initialize(database: DatabaseSync) {
     ) STRICT;
     CREATE INDEX IF NOT EXISTS room_events_room_time ON room_events(room_id, created_at);
   `);
+  const completionVoteColumns = database.prepare(
+    'PRAGMA table_info(investigation_completion_votes)',
+  ).all() as Array<{ name: string }>;
+  if (!completionVoteColumns.some((column) => column.name === 'authorization_version')) {
+    database.exec(`
+      ALTER TABLE investigation_completion_votes
+      ADD COLUMN authorization_version INTEGER NOT NULL DEFAULT 1 CHECK (authorization_version > 0)
+    `);
+  }
 }
 
 export function getDatabase() {

@@ -102,11 +102,22 @@ Assets only connect logical content to one or more source records; they never ca
 ```json
 {
   "assetId": "asset_a3b4c5d6",
-  "sourceIds": ["src_d4e5f6a7"]
+  "sourceIds": ["src_d4e5f6a7"],
+  "pageObjects": [
+    {
+      "sourceId": "src_d4e5f6a7",
+      "pageId": "page_f6a7b8c9",
+      "mediaType": "image/webp",
+      "sha256": "sha256:...",
+      "byteLength": 12345,
+      "width": 1440,
+      "height": 2037
+    }
+  ]
 }
 ```
 
-`sourceIds` is non-empty, unique, and fully included in the taint set of every content block that uses the asset. Original and derived bytes remain in the private vault.
+`sourceIds` is non-empty, unique, and fully included in the taint set of every content block that uses the asset. Every source page requires exactly one verified private WebP page object whose source/page ownership, dimensions, byte length, and digest are provenance-bound. Original and derived bytes remain in the private vault. Installation re-verifies the originals but copies only compact page objects to private pack storage, never to `public/` or a static build artifact.
 
 Every extracted or inferred field carries evidence:
 
@@ -214,9 +225,40 @@ Do not combine OCR confidence, source classification, page order, face pairing, 
   "completeWhen": { "op": "host_release", "releaseId": "release_c9d0e1f2" },
   "allowedActions": ["read_role_section", "search", "publish_clue"],
   "locationIds": [],
+  "investigationFlow": {
+    "locationSelection": {
+      "mode": "vote",
+      "scope": "room_scoped",
+      "resolution": "plurality_all_cast",
+      "tieBreak": "seat_cursor_choice"
+    },
+    "turnOrder": { "mode": "seat_order" },
+    "clueDeal": { "mode": "verified_pool_order", "commit": "one_per_turn" },
+    "publicationDuty": {
+      "predicate": "round_scoped_private_holding_count",
+      "maxPrivateCount": 0,
+      "action": "publish_one_held",
+      "blockedActions": ["vote_location", "search"]
+    },
+    "roleRestrictions": [
+      {
+        "principalRoleId": "role_e5f6a7b8",
+        "restrictedLocationIds": ["loc_d0e1f2a3"],
+        "restrictedClueIds": [],
+        "mode": "deny_unless_only_remaining_eligible"
+      }
+    ],
+    "completion": { "mode": "consent_vote", "exhaustive": "all_remaining" }
+  },
   "evidence": []
 }
 ```
+
+`investigationFlow` is optional. When present, it defines a server-enforced collective investigation loop: every active assigned member casts one replaceable ballot; the plurality resolves only after all ballots are present; a tied result follows the rotating seat cursor; already selected locations are excluded at room or stage scope; one clue is acquired per seat-ordered turn from the verified remaining pool; and an unresolved round-scoped private-holding obligation blocks the declared actions. `maxPrivateCount` is a non-negative integer and all investigation state is room/version scoped and append-only where applicable.
+
+`roleRestrictions` is optional and viewer scoped. A restricted location or clue stays unavailable while at least one non-restricted eligible choice remains; fallback is derived by the server only when every remaining eligible choice is restricted. `completion` is optional; `consent_vote` records one current authorization-scoped consent per active assigned member, and `all_remaining` prevents completion while any eligible location remains. A stage using this completion mode must require its own `investigation_complete` or `completion_vote_satisfied` condition.
+
+An investigation-flow location must have a non-empty clue pool and cannot use `host_dealt`. Location availability, clue-pool entry availability, and clue acquisition conditions in this flow must be room-invariant: they cannot contain viewer-local `role_assigned` or `clue_held` operations, including below `all`, `any`, or `not`. Express role-specific investigation limits only through `roleRestrictions`; room events such as `clue_acquired_in_room` and `clue_published` remain valid conditions.
 
 The script title is L1. A role display name is L1 or belongs to that role's L2 compartment. Role sections cannot contain L3/L4 content, and every L2 section block belongs to the enclosing role. Stage labels are L1 or belong to the enclosing stage compartment.
 
@@ -225,8 +267,9 @@ Allowed condition operations are:
 - `always`
 - `all`, `any`, `not`
 - `stage_active`, `stage_reached`
+- `investigation_complete`, `completion_vote_satisfied`
 - `role_assigned`
-- `clue_held`, `clue_published`
+- `clue_held`, `clue_acquired_in_room`, `clue_published`
 - `host_release`
 - `session_completed`
 
@@ -293,6 +336,8 @@ Each face has at least one content block. Every face asset must also appear in o
 
 `initialAudience` is exactly `holder`. Broader clue visibility exists only through an explicit, evidence-backed publication event; assignment or room membership alone never reveals a newly acquired clue.
 
+`publication.duty` is optional. The only supported form is `"duty": { "mode": "mandatory_on_acquire" }`; it requires `publication.allowed: true` and at least one revealed face. The holder's declared investigation actions remain blocked until that exact clue is published. Absence of the field keeps publication optional.
+
 ## Host pack
 
 ```json
@@ -307,6 +352,8 @@ Each face has at least one content block. Every face asset must also appear in o
 ```
 
 Host instructions, resolutions, accepted answers, and released host material reference only L3 content blocks. Resolution sections may name only a declared `releaseId`. Release IDs are unique, and release conditions participate in the same dependency-cycle analysis as stage-entry conditions. A non-empty host pack requires source evidence.
+
+General L3 authorization always remains denied. A player application needs a separate resolution projector that verifies all of the following at request time: the viewer is still a room member, the room status is completed, the section and content both belong to the same eligible release, every source is verified as `solution`, and the requested image appears in that current projection. A release condition alone must never make L3 readable through the ordinary content path.
 
 ## Grants
 

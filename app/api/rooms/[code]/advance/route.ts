@@ -42,6 +42,7 @@ export async function POST(
       ),
       hostReleaseIds: new Set(room.hostReleaseIds),
       sessionCompleted: false,
+      investigationCompletedStageIds: new Set(room.investigationCompletedStageIds),
     };
     const releasedContext = withEligibleHostReleases(bundle, context);
     const simulatedFlowRoles = room.incompleteStart

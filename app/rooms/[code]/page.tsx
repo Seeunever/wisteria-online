@@ -1,16 +1,20 @@
 import { getCurrentUser } from '@/lib/auth';
-import { getRoomForMember } from '@/lib/rooms';
+import { getInvestigationState, getRoomForMember } from '@/lib/rooms';
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { listFrozenPackVersions, loadFrozenBundle } from '@/lib/packs';
 import {
+  deriveInvestigationCandidates,
   evaluateStageFlowCondition,
   projectAssignedRole,
   projectAvailableLocations,
   projectLobby,
+  projectPlayerGuide,
+  projectReleasedResolution,
   projectVisibleClues,
   withEligibleHostReleases,
   type AuthorizationContext,
+  type InvestigationCandidates,
 } from '@/lib/blind-runtime';
 import { ProtectedContent } from './protected-content';
 
@@ -38,8 +42,12 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
           ? '当前阶段还不满足推进条件；少人测试时，缺席角色相关内容可能无法完成。'
           : error === 'delete'
             ? '房间没有删除成功。只有仍在房间内的玩家确认后才能删除。'
-            : error === 'search'
+          : error === 'search'
               ? '没有取得这张线索。它可能刚被别人拿走，或本阶段的调查次数已经用完。'
+            : error === 'vote'
+              ? '投票没有提交成功。房间状态可能刚刚变化，请刷新后再选。'
+            : error === 'completion'
+              ? '阶段确认没有提交成功。请先完成剩余调查和必须公开的线索，再刷新重试。'
           : null;
   const isOwner = room.ownerUserId === user.id;
   const packs = isOwner && !room.versionId ? listFrozenPackVersions() : [];
@@ -59,11 +67,19 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
     ),
     hostReleaseIds: new Set(room.hostReleaseIds),
     sessionCompleted: room.status === 'completed',
+    investigationCompletedStageIds: new Set(room.investigationCompletedStageIds),
   };
   let lobby: ReturnType<typeof projectLobby> = null;
   let assignedRole: ReturnType<typeof projectAssignedRole> = null;
   let availableLocations: ReturnType<typeof projectAvailableLocations> = [];
   let visibleClues: ReturnType<typeof projectVisibleClues> = [];
+  let playerGuide: ReturnType<typeof projectPlayerGuide> = [];
+  let releasedResolution: ReturnType<typeof projectReleasedResolution> = [];
+  let investigationState: ReturnType<typeof getInvestigationState> | null = null;
+  let investigationCandidates: InvestigationCandidates | null = null;
+  let investigationFlow: NonNullable<
+    ReturnType<typeof loadFrozenBundle>['stages'][string]['investigationFlow']
+  > | null = null;
   let packRoleCount = 0;
   let packLoadFailed = false;
   let canAdvance = false;
@@ -73,11 +89,42 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
       packRoleCount = Object.keys(bundle.roles).length;
       lobby = room.status === 'lobby' ? projectLobby(bundle, authorization) : null;
       assignedRole = projectAssignedRole(bundle, authorization);
-      availableLocations = projectAvailableLocations(bundle, authorization);
       visibleClues = projectVisibleClues(bundle, authorization);
+      playerGuide = projectPlayerGuide(bundle, authorization);
+      releasedResolution = projectReleasedResolution(bundle, authorization);
       const activeStage = authorization.activeStageId
         ? bundle.stages[authorization.activeStageId]
         : null;
+      investigationFlow = activeStage?.investigationFlow ?? null;
+      if (activeStage && investigationFlow) {
+        const mandatoryClueIds = Object.values(bundle.clues)
+          .filter((clue) => clue.publication.duty?.mode === 'mandatory_on_acquire')
+          .map((clue) => clue.clueId);
+        investigationState = getInvestigationState({
+          roomId: room.id,
+          membershipId: room.membershipId,
+          stageId: activeStage.stageId,
+          scope: investigationFlow.locationSelection.scope,
+          perPlayerStageLimit: investigationFlow.acquisitionLimit.perPlayer,
+          maxPrivateCount: investigationFlow.publicationDuty.maxPrivateCount,
+          mandatoryClueIds,
+        });
+        investigationCandidates = deriveInvestigationCandidates(
+          bundle,
+          activeStage.stageId,
+          authorization,
+          room.members.flatMap((member) => member.assignedRoleId ? [{
+            assignedRoleId: member.assignedRoleId,
+            heldClueIds: new Set(member.heldClueIds),
+          }] : []),
+          new Set(investigationState.searchedLocationIds),
+        );
+        availableLocations = projectAvailableLocations(bundle, authorization, {
+          clueIdsByLocation: investigationCandidates.actorClueIdsByLocation,
+        });
+      } else {
+        availableLocations = projectAvailableLocations(bundle, authorization);
+      }
       if (isOwner && room.status === 'running' && activeStage) {
         const released = withEligibleHostReleases(bundle, authorization);
         const simulatedFlowRoles = room.incompleteStart
@@ -114,6 +161,37 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
     : room.status === 'running'
       ? '游戏已经开始，当前阶段的个人剧本已按角色解锁。'
       : '本局已经结束，房间保留最终授权状态。';
+  const privateClues = visibleClues.filter((clue) => clue.isHeld && !clue.isPublished);
+  const publishedClues = visibleClues.filter((clue) => clue.isPublished);
+  const investigationLocationIds = investigationFlow && investigationState
+    ? investigationState.acquisitionsThisStage < investigationFlow.acquisitionLimit.perPlayer
+      ? investigationState.selectedLocationId
+        ? [investigationState.selectedLocationId]
+        : investigationCandidates?.actorLocationIds ?? []
+      : []
+    : availableLocations.map((location) => location.locationId);
+  const investigationLocations = availableLocations.filter(
+    (location) => investigationLocationIds.includes(location.locationId),
+  );
+  const voteBlockedForPublication = Boolean(
+    investigationState?.hasPublicationObligation
+    && investigationFlow?.publicationDuty.blockedActions.includes('vote_location'),
+  );
+  const searchBlockedForPublication = Boolean(
+    investigationState?.hasPublicationObligation
+    && investigationFlow?.publicationDuty.blockedActions.includes('search'),
+  );
+  const publicationBlockMessage = voteBlockedForPublication && searchBlockedForPublication
+    ? '完成后才能继续投票或搜索。'
+    : voteBlockedForPublication
+      ? '完成后才能继续投票。'
+      : searchBlockedForPublication
+        ? '完成后才能继续搜索。'
+        : '请按游戏说明及时完成公开。';
+  const currentTurnMember = investigationState?.currentTurnMembershipId
+    ? room.members.find((member) => member.membershipId === investigationState?.currentTurnMembershipId)
+    : null;
+  const myVote = investigationState?.votes.find((vote) => vote.membershipId === room.membershipId);
 
   return (
     <main className="rooms-shell">
@@ -125,6 +203,13 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
           <span className="room-code">房间 {room.code}</span>
         </div>
       </header>
+      {room.versionId && !packLoadFailed ? (
+        <nav className="room-quick-dock" aria-label="房间快捷入口">
+          {playerGuide.length ? <Link href="#game-guide">游戏说明</Link> : null}
+          {room.status !== 'lobby' ? <Link href="#public-clue-board">公开线索</Link> : null}
+          {releasedResolution.length ? <Link href="#final-resolution">真相</Link> : null}
+        </nav>
+      ) : null}
       <section className="live-room-hero">
         <div><p className="eyebrow">{room.status.toUpperCase()}</p><h1>{room.versionId ? (room.packLabel ?? '剧本版本已锁定') : '等待房主选择剧本'}</h1><p>{room.versionId ? roomProgress : '样本拆解完成并冻结后，房主可以在这里装载。'}</p></div>
         <div className="room-safety-card"><strong>权限版本 {room.authorizationVersion}</strong><p>每次角色、阶段或成员状态变化，旧的访问能力都会失效。</p></div>
@@ -135,6 +220,18 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
           <p className="eyebrow">PACK UNAVAILABLE</p>
           <h2>剧本暂时无法读取</h2>
           <p className="empty-state">服务器没有成功读取这个冻结版本，选角色和开场已经暂停，请稍后刷新。</p>
+        </section>
+      ) : null}
+      {playerGuide.length ? (
+        <section className="members-section player-guide-section" id="game-guide">
+          <p className="eyebrow">GAME GUIDE</p>
+          <h2>游戏说明</h2>
+          <p className="section-guidance">这是当前剧本版本已验证的公开玩法说明，房间内所有玩家都可以随时查看。</p>
+          <div className="player-guide-content">
+            {playerGuide.map((content, index) => (
+              <ProtectedContent key={`player-guide-${index}`} code={room.code} content={content} />
+            ))}
+          </div>
         </section>
       ) : null}
       {isOwner && !room.versionId ? (
@@ -161,30 +258,34 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
         <section className="members-section">
           <p className="eyebrow">ROLE LOCK</p>
           <h2>{lobby.title ?? '选择你的席位'}</h2>
-          <div className="member-list">
+          <div className="member-list role-choice-grid">
             {lobby.roles.map((role) => {
               const taken = assignedRoleIds.has(role.roleId);
               return (
                 <article className="role-choice-card" key={role.roleId}>
-                  <span>{String(role.slot).padStart(2, '0')}</span>
+                  <span className="role-choice-index">{String(role.slot).padStart(2, '0')}</span>
                   <div className="role-choice-copy">
                     <strong>{role.displayName ?? `席位 ${role.slot}`}</strong>
-                    {role.introduction.length ? role.introduction.map((content, index) => (
-                      <ProtectedContent
-                        key={`${role.roleId}-introduction-${index}`}
-                        code={room.code}
-                        content={content}
-                      />
-                    )) : (
-                      <p>这个冻结版本尚未录入可在选角前公开的角色简介。</p>
+                    <div className="role-choice-media">
+                      {role.introduction.length ? role.introduction.map((content, index) => (
+                        <ProtectedContent
+                          key={`${role.roleId}-introduction-${index}`}
+                          code={room.code}
+                          content={content}
+                        />
+                      )) : (
+                        <p>这个冻结版本尚未录入可在选角前公开的角色封面。</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="role-choice-action">
+                    {taken ? <small>已被选择</small> : (
+                      <form action={`/api/rooms/${room.code}/roles/claim`} method="post">
+                        <input type="hidden" name="roleId" value={role.roleId} />
+                        <button type="submit">选择这个角色</button>
+                      </form>
                     )}
                   </div>
-                  {taken ? <small>已被选择</small> : (
-                    <form action={`/api/rooms/${room.code}/roles/claim`} method="post">
-                      <input type="hidden" name="roleId" value={role.roleId} />
-                      <button type="submit">选择这个角色</button>
-                    </form>
-                  )}
                 </article>
               );
             })}
@@ -216,13 +317,47 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
           <p className="empty-state">少人开场后不能再补选角色，所以当前账号不会获得任何个人剧本。</p>
         </section>
       ) : null}
-      {room.status === 'running' && availableLocations.length ? (
+      {room.status === 'running' && investigationFlow && investigationState?.hasPublicationObligation ? (
+        <section className="members-section investigation-obligation" role="alert">
+          <p className="eyebrow">PUBLICATION REQUIRED</p>
+          <h2>先处理本轮公开义务</h2>
+          <p className="section-guidance">按照游戏说明，你需要从自己的未公开线索中公开一张，{publicationBlockMessage}</p>
+        </section>
+      ) : null}
+      {room.status === 'running' && investigationLocations.length ? (
         <section className="members-section location-section">
           <p className="eyebrow">SEARCH</p>
-          <h2>先选择调查地点</h2>
-          <p className="section-guidance">展开地点后，再从尚未取走的线索背面中选择一张。打开前不会显示线索内容。</p>
+          <h2>{investigationFlow
+            ? investigationState?.selectedLocationId
+              ? '按席位轮流取得线索'
+              : '全员投票选择调查地点'
+            : '先选择调查地点'}</h2>
+          <p className="section-guidance">{investigationFlow
+            ? investigationState?.selectedLocationId
+              ? `第 ${investigationState.roundNumber} 轮地点已经确定。${currentTurnMember ? `当前轮到 ${currentTurnMember.displayName}。` : ''}每次只取得一张；每人本阶段最多 ${investigationFlow.acquisitionLimit.perPlayer} 张。`
+              : `第 ${investigationState?.roundNumber ?? 1} 轮：每位已选角色的玩家投一票；全部投完后自动结算，已经调查过的地点不会再次出现。当前已投 ${investigationState?.votes.length ?? 0}/${room.members.filter((member) => member.assignedRoleId).length} 票。`
+            : '展开地点后，再从尚未取走的线索背面中选择一张。打开前不会显示线索内容。'}</p>
+          {investigationFlow && !investigationState?.selectedLocationId ? (
+            <div className="investigation-vote-grid">
+              {investigationLocations.map((location, index) => (
+                <form action={`/api/rooms/${room.code}/investigation/vote`} method="post" key={location.locationId}>
+                  <input type="hidden" name="locationId" value={location.locationId} />
+                  <input type="hidden" name="authorizationVersion" value={room.authorizationVersion} />
+                  <button
+                    className={myVote?.locationId === location.locationId ? 'is-selected' : ''}
+                    type="submit"
+                    disabled={voteBlockedForPublication}
+                  >
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    <strong>{location.name ?? `地点 ${index + 1}`}</strong>
+                    <small>{myVote?.locationId === location.locationId ? '你已投给这里，可改票' : '投票选择此地点'}</small>
+                  </button>
+                </form>
+              ))}
+            </div>
+          ) : (
           <div className="location-list">
-            {availableLocations.map((location, index) => (
+            {investigationLocations.map((location, index) => (
               <details className="location-card" key={location.locationId}>
                 <summary>
                   <span>{String(index + 1).padStart(2, '0')}</span>
@@ -234,7 +369,15 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
                     <form action={`/api/rooms/${room.code}/search`} method="post" key={choice.clueId}>
                       <input type="hidden" name="locationId" value={location.locationId} />
                       <input type="hidden" name="clueId" value={choice.clueId} />
-                      <button type="submit" aria-label={`选择第 ${choice.number} 张线索`}>
+                      <input type="hidden" name="authorizationVersion" value={room.authorizationVersion} />
+                      <button
+                        type="submit"
+                        aria-label={`选择第 ${choice.number} 张线索`}
+                        disabled={Boolean(investigationFlow && (
+                          investigationState?.currentTurnMembershipId !== room.membershipId
+                          || searchBlockedForPublication
+                        ))}
+                      >
                         <span aria-hidden="true">?</span>
                         <strong>线索 {String(choice.number).padStart(2, '0')}</strong>
                         <small>点击取得并打开</small>
@@ -245,22 +388,77 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
               </details>
             ))}
           </div>
+          )}
         </section>
       ) : null}
-      {visibleClues.length ? (
+      {room.status === 'running' && investigationFlow?.completion
+        && investigationState && !investigationState.selectedLocationId
+        && (investigationState.roomQuotaReached
+          || (investigationCandidates?.roomLocationIds.length ?? 0) === 0) ? (
+        <section className="members-section investigation-completion">
+          <p className="eyebrow">INVESTIGATION COMPLETE</p>
+          <h2>{investigationState.stageCompleted ? '本阶段调查已确认完成' : '全员确认结束本阶段调查'}</h2>
+          <p className="section-guidance">
+            {investigationState.stageCompleted
+              ? '所有调查地点已经处理完毕，房主现在可以按阶段条件继续推进。'
+              : `剩余地点已经全部调查。当前已确认 ${investigationState.completionVoteMembershipIds.length}/${room.members.filter((member) => member.assignedRoleId).length} 人。`}
+          </p>
+          {!investigationState.stageCompleted ? (
+            <form action={`/api/rooms/${room.code}/investigation/complete`} method="post">
+              <input type="hidden" name="authorizationVersion" value={room.authorizationVersion} />
+              <button
+                type="submit"
+                disabled={investigationState.hasPublicationObligation
+                  || investigationState.completionVoteMembershipIds.includes(room.membershipId)}
+              >
+                {investigationState.completionVoteMembershipIds.includes(room.membershipId)
+                  ? '已确认，等待其他玩家'
+                  : '确认本阶段调查完成'}
+              </button>
+            </form>
+          ) : null}
+        </section>
+      ) : null}
+      {privateClues.length ? (
         <section className="members-section clue-index-section">
-          <p className="eyebrow">CLUES</p>
-          <h2>已取得与已公开线索</h2>
-          <p className="section-guidance">私藏线索只对持有者可见；公开后才会进入所有玩家的看板。</p>
+          <p className="eyebrow">PRIVATE CLUES</p>
+          <h2>我的未公开线索</h2>
+          <p className="section-guidance">这些线索只对你可见。打开后可以选择继续隐藏，或公开到全房间看板。</p>
           <div className="clue-index-list">
-          {visibleClues.map((clue, clueIndex) => (
+          {privateClues.map((clue, clueIndex) => (
             <Link className="clue-index-card" key={clue.clueId} href={`/rooms/${room.code}/clues/${clue.clueId}`}>
               <span>{String(clueIndex + 1).padStart(2, '0')}</span>
               <strong>打开线索</strong>
-              <small>{clue.isPublished ? '全房间已公开' : clue.isHeld ? '仅自己可见' : '房间公开线索'}</small>
+              <small>仅自己可见</small>
             </Link>
           ))}
           </div>
+        </section>
+      ) : null}
+      {room.status !== 'lobby' ? (
+        <section className="members-section public-clue-board" id="public-clue-board">
+          <p className="eyebrow">PUBLIC CLUE BOARD</p>
+          <h2>公开线索板</h2>
+          <p className="section-guidance">所有已公开线索会直接留在这里，房间内每位玩家都能查看，不需要再次翻开。</p>
+          {publishedClues.length ? (
+            <div className="public-clue-list">
+              {publishedClues.map((clue, clueIndex) => (
+                <article className="public-clue-card" key={clue.clueId}>
+                  <header>
+                    <span>{String(clueIndex + 1).padStart(2, '0')}</span>
+                    <strong>公开线索</strong>
+                  </header>
+                  {clue.faces.flatMap((face) => face.content).map((content, contentIndex) => (
+                    <ProtectedContent
+                      key={`${clue.clueId}-public-${contentIndex}`}
+                      code={room.code}
+                      content={content}
+                    />
+                  ))}
+                </article>
+              ))}
+            </div>
+          ) : <p className="empty-state">目前还没有公开线索。玩家公开线索后，它会自动出现在这里。</p>}
         </section>
       ) : null}
       {isOwner && room.versionId && room.status === 'lobby' && packRoleCount > 0
@@ -329,6 +527,18 @@ export default async function RoomPage({ params, searchParams }: RoomPageProps) 
           <p className="eyebrow">COMPLETED</p>
           <h2>本局已经完成</h2>
           <p className="empty-state">房间保留在这个不可变剧本版本与最终授权状态上。</p>
+        </section>
+      ) : null}
+      {releasedResolution.length ? (
+        <section className="members-section resolution-section" id="final-resolution">
+          <p className="eyebrow">FINAL RESOLUTION</p>
+          <h2>真相</h2>
+          <p className="section-guidance">本局已经结束，结束内容现在对房间成员开放。</p>
+          <div className="player-guide-content">
+            {releasedResolution.flatMap((section) => section.content).map((content, index) => (
+              <ProtectedContent key={`resolution-${index}`} code={room.code} content={content} />
+            ))}
+          </div>
         </section>
       ) : null}
       <section className="members-section"><p className="eyebrow">PLAYERS</p><h2>已到场</h2><div className="member-list">{room.members.map((member, index) => <div key={member.membershipId}><span>{String(index + 1).padStart(2, '0')}</span><strong>{member.displayName}</strong><small>{member.isOwner ? '房主' : member.assignedRoleId ? '已选角色' : '未选角色'}</small></div>)}</div></section>

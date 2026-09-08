@@ -62,16 +62,20 @@ try{
  console.log('通过：共用口令门禁及签名会话、正式模式隔离、禁止测试接口、HTTPS配置与安全Cookie、代理来源检查、双端/重启保存、在线WAL备份及恢复、私有目录不开放。');
  await close();
  // Browser recovery on isolated state. This is not a claim of real-device or public HTTPS testing.
- const assisted=runtimeSettings({...env,YINGXIE_TEST_ASSIST:'1',STATE_DIR:path.join(temp,'assisted-production')});
- base=await start(assisted.libraryOptions);
- for(const spec of specs){
-  const login=await call(spec,'login',{name:'辅助验收'});spec.cookie=login.cookie.split(';')[0];await call(spec,'claim',{role:spec.role});
-  const s=(await call(spec,'state')).data;assert.equal(s.testAssist,spec.book==='yingxie');
-  const result=await call(spec,'test-assist',{confirmed:true,requestId:crypto.randomUUID(),checkpoint:'act-1-reading/1/0'});
-  assert.equal(result.status,spec.book==='yingxie'?200:404);
-  if(spec.book==='yingxie'){const next=(await call(spec,'state')).data;assert.equal(next.progress.ready.length,4);assert.ok(!next.progress.ready.includes(spec.role));assert.equal(next.roles.filter(r=>r.owner).length,5)}
+ for(const [yingxie,ziteng] of [['1','0'],['0','1'],['1','1']]){
+  const assisted=runtimeSettings({...env,YINGXIE_TEST_ASSIST:yingxie,ZITENG_TEST_ASSIST:ziteng,STATE_DIR:path.join(temp,'assisted-'+yingxie+ziteng)});
+  base=await start(assisted.libraryOptions);
+  for(const spec of specs){
+   const enabled=(spec.book==='yingxie'?yingxie:ziteng)==='1',count=spec.book==='yingxie'?5:6;
+   const login=await call(spec,'login',{name:'辅助验收'});spec.cookie=login.cookie.split(';')[0];await call(spec,'claim',{role:spec.role});
+   const s=(await call(spec,'state')).data;assert.equal(s.testAssist,enabled);
+   const result=await call(spec,'test-assist',{confirmed:true,requestId:crypto.randomUUID(),checkpoint:spec.book==='yingxie'?'act-1-reading/1/0':'reading/1/1'});
+   assert.equal(result.status,enabled?200:404);
+   if(enabled){const next=(await call(spec,'state')).data,ready=next.flow?.ready||next.progress.ready;assert.equal(ready.length,count-1);assert.ok(!ready.includes(spec.role));assert.equal(next.roles.filter(r=>r.owner).length,count)}
+  }
+  await close();
  }
- await close();console.log('通过：正式模式下仅应邪显式开放测试辅助，实际补齐其他四人，紫藤仍禁用。');
+ console.log('通过：正式模式下两本可分别或同时开放辅助；补齐其他角色、不替本人确认。');
  base=await start({accessCode:env.SITE_ACCESS_CODE,yingxieOptions:{stateDir:path.join(temp,'browser','yingxie')},zitengOptions:{stateDir:path.join(temp,'browser','ziteng')}});
  const {chromium}=createRequire(import.meta.url)('../murder-mystery-html-builder/murder-mystery-html-builder/node_modules/playwright-core');
  browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',headless:true});

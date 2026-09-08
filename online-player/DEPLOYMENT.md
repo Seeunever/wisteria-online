@@ -2,10 +2,10 @@
 
 ## 当前上线状态（2026-09-08）
 
-- 最新调整：用户明确要求线上应邪开放一键测试辅助，设置 `YINGXIE_TEST_ASSIST=1`，仅此本例外；全局 `TEST_ASSIST=0`、紫藤关闭、HTTPS/口令门禁和原有存档均不变。只在玩家点击时补其他角色，正式与朋友游玩前可将该项改为 `0`。
+- 最新调整：用户已分别授权线上应邪、紫藤全流程单人测试，设置 `YINGXIE_TEST_ASSIST=1`、`ZITENG_TEST_ASSIST=1`；全局 `TEST_ASSIST=0`、HTTPS/口令门禁和原有存档不变。两个开关独立，正式与朋友游玩前可分别改为 `0`。辅助只补别人、停在本人行动处或轮次边界，最后揭晓先由本人确认，回忆由本人手动触发。
 - 正式入口：`https://47.81.210.196/`，先输入共用站点口令，再选择剧本和用户名。口令保存在服务器 `/etc/wisteria-online.env`，不写入本记录。
 - 新服务：`wisteria-online.service`，用户 `wisteria`，已启用开机启动。Node 24.15.0、Nginx 与有效的 IP HTTPS 证书均复用服务器现有安装；证书续期任务保留。
-- 程序：`/opt/wisteria-online/current` → `/opt/wisteria-online/releases/20260908-online-v1`。
+- 程序：`/opt/wisteria-online/current` → `/opt/wisteria-online/releases/20260908-ziteng-assist-v2`；前一版 `20260908-online-v1` 保留用于回退。
 - 正式存档：`/var/lib/wisteria-online/production`；备份：`/var/backups/wisteria-online`。首次启动和验收后都确认两本无测试账号，正式开局不继承本地测试进度。
 - 新服务只监听 `127.0.0.1:4310`，Nginx 的 80/443 转发至新站。口令入口和用户名登录有请求频率限制；响应禁止搜索引擎收录，但这不是访问认证的替代品。
 - 原 `wisteria.service`、`wisteria-backup.timer` 已禁用，相关旧服务文件移到 `/var/backups/wisteria-replacement-20260908/disabled-units`。原 `/opt/wisteria` 移至 `/opt/wisteria-retired-20260908`（root 私有归档，可恢复），旧 Nginx 配置在 `/var/backups/wisteria-replacement-20260908/nginx-wisteria.conf`。没有永久擦除旧资料，没有停掉其他应用。
@@ -21,8 +21,8 @@
 
 `node server.mjs` 保持当前本地测试版和 `state/` 存档。正式版使用 `.env.production.example` 所列配置：
 
-- `APP_MODE=production`：测试辅助接口和按钮关闭，即使监听本机也关闭；尝试 `TEST_ASSIST=1` 会拒绝启动。
-- `YINGXIE_TEST_ASSIST=1`：用户授权的逐本测试例外，可在正式服务上显式开放应邪测试辅助，`0` 关闭；不改变其他本。不开启时遵循默认禁用。
+- `APP_MODE=production`：测试辅助接口和按钮默认关闭，即使监听本机也关闭；尝试全局 `TEST_ASSIST=1` 会拒绝启动，逐本例外见下面两项。
+- `YINGXIE_TEST_ASSIST=1` / `ZITENG_TEST_ASSIST=1`：用户授权的逐本测试例外，可在正式服务上显式开放对应本的测试辅助，`0` 关闭；不改变另一项。不开启时遵循默认禁用。
 - `STATE_DIR`：代码目录外的独立持久化绝对路径，两本分别为 `game.sqlite` 和 `ziteng/game.sqlite`。首次启动为空白局，之后沿用已有进度；不复制本地测试库，不自动重置。
 - `BACKUP_DIR`：与代码和存档都独立的备份目录。正式启动时备份一次，运行期间每小时备份；失败时启动停止或运行日志报警。
 - `PUBLIC_ORIGIN`：完整 HTTPS 站点来源，不含路径。POST 来源按该地址检查，Cookie 强制 Secure/HttpOnly；它不负责签发证书，HTTPS 仍由 Nginx 承接。
@@ -40,6 +40,8 @@
 恢复时停止正式服务，保留现有存档不动，把一份完整备份的两个数据库复制到一个新的空目录，再将 `STATE_DIR` 改为这个新路径后启动。不要覆盖正在运行的数据库，也不要把旧 WAL 文件混入恢复目录。
 
 ## 最小验收
+
+`node check-ziteng-assist.mjs` 使用内存数据库，逐一验证六个角色都能单人走完四幕、前三天区域投票、取牌/处理、跨幕确认和最后揭晓；补测平票由本人或其他人决定，检查助手只拿第一张合法牌、不代操作本人、不自动触发回忆。`check-test-assist.mjs` 检查接口与手机/平板按钮实点。
 
 `node check-deployment.mjs` 使用临时目录：正式配置限制、测试接口禁用、安全 Cookie、跨站来源拒绝、同名双端、重启保存、在线备份与恢复、私有路径不可访问；Chrome 手机模拟断线保留原页及恢复连接。
 

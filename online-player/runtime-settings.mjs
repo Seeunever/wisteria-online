@@ -28,10 +28,10 @@ export function runtimeSettings(env=process.env){
  const backupDir=env.BACKUP_DIR?path.resolve(env.BACKUP_DIR):null;
  if(backupDir&&(inside(stateDir,backupDir)||inside(backupDir,stateDir)||inside(root,backupDir)))throw Error('备份目录必须独立于代码和存档目录');
  const testAssist=!production&&env.TEST_ASSIST!=='0'&&['127.0.0.1','localhost','::1'].includes(host);
- if(env.YINGXIE_TEST_ASSIST!==undefined&&!['0','1'].includes(env.YINGXIE_TEST_ASSIST))throw Error('YINGXIE_TEST_ASSIST 只能为 0 或 1');
- // Explicit user-authorized exception for this already-played pack, not a global production bypass.
- const yingxieTestAssist=env.YINGXIE_TEST_ASSIST===undefined?testAssist:env.YINGXIE_TEST_ASSIST==='1';
+ // Explicit user-authorized exceptions for these two packs, not a global production bypass.
+ const packAssist=name=>{if(env[name]!==undefined&&!['0','1'].includes(env[name]))throw Error(name+' 只能为 0 或 1');return env[name]===undefined?testAssist:env[name]==='1'};
+ const yingxieTestAssist=packAssist('YINGXIE_TEST_ASSIST'),zitengTestAssist=packAssist('ZITENG_TEST_ASSIST');
  const shared={publicOrigin,secureCookie:production||env.COOKIE_SECURE==='1'};
  return {mode,production,host,port,stateDir,backupDir,publicOrigin,libraryOptions:{testAssist,accessCode,publicOrigin,
-  yingxieOptions:{...shared,stateDir,testAssist:yingxieTestAssist},zitengOptions:{...shared,stateDir:path.join(stateDir,'ziteng')}}};
+  yingxieOptions:{...shared,stateDir,testAssist:yingxieTestAssist},zitengOptions:{...shared,stateDir:path.join(stateDir,'ziteng'),testAssist:zitengTestAssist}}};
 }

@@ -198,7 +198,8 @@ if (process.argv[1] && fs.realpathSync(path.resolve(process.argv[1])) === fileUR
     server=createLibrary({createYingxie:createApp,...config.libraryOptions});
     if(backups&&!backedUp)await backups.run();
     await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(config.port,config.host,resolve)});
-    console.log(`${config.production?`正式版（${config.libraryOptions.yingxieOptions.testAssist?'应邪测试辅助已启用':'测试辅助已关闭'}）`:'本地测试版'}：${config.publicOrigin||`http://${config.host}:${config.port}`}`);
+    const assistedBooks=[config.libraryOptions.yingxieOptions.testAssist?'应邪':null,config.libraryOptions.zitengOptions.testAssist?'紫藤':null].filter(Boolean);
+    console.log(`${config.production?`正式版（${assistedBooks.length?assistedBooks.join('、')+'测试辅助已启用':'测试辅助已关闭'}）`:'本地测试版'}：${config.publicOrigin||`http://${config.host}:${config.port}`}`);
     let stopping=false;
     const stop=async()=>{if(stopping)return;stopping=true;server.closeIdleConnections();await new Promise(r=>server.close(r));await backups?.stop()};
     process.once('SIGINT',()=>{stop().catch(()=>{process.exitCode=1})});

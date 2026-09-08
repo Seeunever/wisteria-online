@@ -1,0 +1,23 @@
+[Unit]
+Description=Wisteria Online Player
+After=network.target
+
+[Service]
+Type=simple
+User=wisteria
+Group=wisteria
+WorkingDirectory=/opt/wisteria-online/current
+EnvironmentFile=/etc/wisteria-online.env
+ExecStart=/usr/bin/node /opt/wisteria-online/current/server.mjs
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/wisteria-online /var/backups/wisteria-online
+
+[Install]
+WantedBy=multi-user.target

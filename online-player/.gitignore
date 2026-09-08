@@ -1,0 +1,5 @@
+private/
+state/
+backups/
+.env
+.env.production

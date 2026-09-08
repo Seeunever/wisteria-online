@@ -1,0 +1,117 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {createApp} from './server.mjs';
+import {createRequire} from 'node:module';
+const {chromium}=createRequire(import.meta.url)('../murder-mystery-html-builder/murder-mystery-html-builder/node_modules/playwright-core');
+let browser;
+const stateDir=fs.mkdtempSync(path.join(os.tmpdir(),'yingxie-search-'));
+let server=createApp({stateDir});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+const base=`http://127.0.0.1:${server.address().port}`;
+const call=(route,cookie,body)=>fetch(base+route,{headers:{cookie:cookie||'',connection:'close'},...(body?{method:'POST',body:JSON.stringify(body)}:{})});
+const cookies=[];
+const state=async (i=0)=>(await call('/api/state',cookies[i])).json();
+const act=async(i,body,expected=200)=>{const s=await state(i);const r=await call('/api/search',cookies[i],{revision:s.search?.revision,...body});assert.equal(r.status,expected,await r.text())};
+const id=n=>`act-one-clue-${String(n).padStart(2,'0')}`;
+try{
+ for(let i=0;i<5;i++){const r=await call('/api/login',null,{name:`搜证测试${i}`});cookies.push(r.headers.get('set-cookie').split(';')[0]);const s=await state(i);await call('/api/claim',cookies[i],{role:s.roles[i].id})}
+ assert.equal((await call(`/api/clue/${id(1)}/front`,cookies[0])).status,403);
+ for(const c of cookies)await call('/api/ready',c,{phase:'act-1-reading'});
+ await act(1,{action:'take',card:id(1)},409);
+ await act(0,{action:'take',card:id(4)},409);
+ await act(0,{action:'skip'},409);
+ const revision=(await state()).search.revision;
+ const observerBefore=(await state(4)).search;
+ assert.deepEqual(observerBefore.cards,[]);
+ assert.equal((await call(`/api/clue/${id(1)}/front`,cookies[4])).status,403);
+ const parallel=await Promise.all([call('/api/search',cookies[0],{action:'take',card:id(1),revision}),call('/api/search',cookies[0],{action:'take',card:id(5),revision})]);
+ assert.deepEqual(parallel.map(r=>r.status).sort(),[200,409]);
+ const first=(await state()).search.pending;
+ assert.deepEqual((await state(4)).search,observerBefore,'他人领取动作不得改变观察者的牌池、pending或版本信息');
+ assert.equal((await call(`/api/clue/${first}/content`,cookies[1])).status,403);
+ assert.equal((await state(1)).search.cards.find(c=>c.id===first),undefined);
+ assert.equal((await state(1)).search.pending,null);
+ assert.equal((await call(`/api/clue/${first}/content`,cookies[0])).status,200);
+ await act(0,{action:'resolve',card:first,keep:first});
+ await act(1,{action:'take',card:id(2)});
+ assert.equal((await call(`/api/clue/${id(2)}/content`,cookies[4])).status,403);
+ const ownerQueued=(await state(1)).search;
+ assert.equal(ownerQueued.cards.find(c=>c.id===id(2)).queued,true);
+ const observerQueued=(await state(4)).search;
+ const port=server.address().port;await new Promise(r=>server.close(r));
+ server=createApp({stateDir});await new Promise(r=>server.listen(port,'127.0.0.1',r));
+ assert.deepEqual((await state(1)).search,ownerQueued,'重启保留待公开和本人私读状态');
+ assert.deepEqual((await state(4)).search,observerQueued,'重启不得提前公开');
+ await act(1,{action:'resolve',card:id(2),keep:id(2)},409);
+ await act(1,{action:'resolve',card:id(2),keep:null});
+ await act(2,{action:'take',card:id(6)},409);
+ for(const [i,n] of [[2,3],[3,4],[4,6]]){await act(i,{action:'take',card:id(n)});await act(i,{action:'resolve',card:id(n),keep:n===3?null:id(n)})}
+ const roundTwo=(await state()).search;
+ assert.equal(roundTwo.phase,'act-1-search');assert.equal(roundTwo.round,2);assert.equal(roundTwo.turn,0);
+ assert.deepEqual(roundTwo.ready,[]);
+ const batchObserver=(await state(4)).search;
+ assert.deepEqual(batchObserver.cards.filter(c=>c.public).map(c=>c.id),[id(2),id(3)]);
+ assert.equal(batchObserver.cards.some(c=>'owner' in c),false);
+ await act(1,{action:'take',card:id(7)},409);
+ await act(0,{action:'continue'},409);
+ const second=first===id(1)?id(5):id(1);
+ await act(0,{action:'take',card:second});
+ assert.equal((await call(`/api/clue/${id(2)}/content`,cookies[4])).status,200);
+ const pendingState=await state();assert.equal(pendingState.search.cards.filter(c=>c.mine&&!c.public&&!c.queued).length,2);
+ await act(0,{action:'resolve',card:second,keep:second});
+ assert.equal((await call(`/api/clue/${first}/content`,cookies[1])).status,403);
+ await act(0,{action:'publish',card:second});
+ assert.equal((await call(`/api/clue/${second}/content`,cookies[1])).status,403);
+ for(const [i,n] of [[1,7],[2,8],[3,9],[4,10]]){await act(i,{action:'take',card:id(n)});await act(i,{action:'resolve',card:id(n),keep:i===4?id(10):null})}
+ const end=(await state()).search;assert.equal(end.phase,'act-1-discussion');assert.equal(end.cards.filter(c=>c.public).length,9);
+ assert.equal((await call(`/api/clue/${first}/content`,cookies[1])).status,200);
+ assert.equal((await call(`/api/clue/${second}/content`,cookies[1])).status,200);
+ assert.equal(end.cards.some(c=>'owner' in c),false);
+ await act(0,{action:'continue'},409);
+ console.log('第一幕通过：轮末批量公开、必须公开卡也等待、无领取者字段、非行动者看不到牌池变化、重启保留待公开、角色顺序和连续两轮。');
+ const role0=(await state()).role;
+ const secondPage=`/api/act-page/${role0}/2/0`;
+ const id2=n=>`act-two-clue-${String(n).padStart(2,'0')}`;
+ assert.equal((await call(secondPage,cookies[0])).status,404);
+ assert.equal((await call(`/api/clue/${id2(1)}/front`,cookies[0])).status,403);
+ browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',headless:true});
+ const contexts=await Promise.all([browser.newContext({viewport:{width:1280,height:900}}),browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true})]);
+ const pages=[];const errors=[];
+ for(let i=0;i<2;i++){await contexts[i].addCookies([{name:'session',value:cookies[i===0?0:4].split('=')[1],url:base}]);const p=await contexts[i].newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(base);pages.push(p)}
+ for(let i=0;i<4;i++)await act(i,{action:'confirm-phase',phase:'act-1-discussion'});
+ assert.equal((await state()).search.phase,'act-1-discussion');
+ await pages[1].getByRole('button',{name:'讨论结束，进入第二幕'}).click();
+ for(const p of pages){await p.waitForFunction(()=>document.getElementById('roleTitle').textContent.includes('第二幕'));await p.locator('#pages img').last().evaluate(img=>img.decode());}
+ assert.equal((await call(secondPage,cookies[0])).status,200);
+ assert.equal((await call(secondPage,cookies[1])).status,403);
+ assert.equal((await state()).search.ready.length,0);
+ await act(4,{action:'confirm-phase',phase:'act-1-discussion'},409);
+ await act(0,{action:'take',card:id2(1)},409);
+ assert.equal((await call(`/api/clue/${id2(1)}/front`,cookies[0])).status,403);
+ assert.equal((await state(4)).search.cards.find(c=>c.id===id(10)).public,false);
+ for(let i=0;i<4;i++)await act(i,{action:'confirm-phase',phase:'act-2-reading'});
+ await pages[1].getByRole('button',{name:'第二幕读完并交流好，开始搜证'}).click();
+ await pages[0].getByRole('button',{name:'领取这张 · 01'}).click();
+ await pages[0].getByRole('button',{name:'阅读完毕，轮到下一人'}).click();
+ for(const [i,n] of [[1,2],[2,3],[3,4]]){
+  if(i===2)await act(i,{action:'take',card:id2(5)},409);
+  await act(i,{action:'take',card:id2(n)});await act(i,{action:'resolve',card:id2(n),keep:id2(n)});
+ }
+ await pages[1].getByLabel('调查地点').selectOption('单人间');
+ await pages[1].getByRole('button',{name:'领取这张 · 05'}).click();
+ await pages[1].getByRole('button',{name:/隐藏「第1幕.*10」，公开「第2幕/}).waitFor();
+ const cross=await state(4);assert.equal(cross.search.cards.filter(c=>c.mine&&!c.public&&!c.queued).length,2);
+ assert.equal((await call(`/api/clue/${id2(5)}/content`,cookies[0])).status,403);
+ await pages[1].getByRole('button',{name:/隐藏「第1幕.*10」，公开「第2幕/}).click();
+ for(const p of pages)await p.waitForFunction(()=>document.getElementById('search').textContent.includes('第二幕一轮搜证已结束'));
+ const finish=await state(4);assert.equal(finish.search.phase,'act-2-discussion');assert.equal(finish.search.round,1);
+ assert.equal(finish.search.cards.filter(c=>c.mine&&!c.public&&!c.queued).length,1);
+ assert.equal(finish.search.cards.find(c=>c.id===id(10)).public,false);
+ assert.equal((await call(`/api/clue/${id2(5)}/content`,cookies[0])).status,200);
+ await act(0,{action:'confirm-phase',phase:'act-3-reading'},409);
+ for(let i=0;i<2;i++){assert.equal(await pages[i].evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await pages[i].screenshot({path:path.join(stateDir,`act-two-${i}.png`),fullPage:true})}
+ assert.deepEqual(errors,[]);
+ console.log('第二幕通过：两次全员门禁、旧确认不串阶段、私页隔离、少爷禁搜单人间、跨幕隐藏额度、仅一轮、Chrome双端点击与响应式。');
+ console.log(`截图：${stateDir}`);
+}finally{await browser?.close();await new Promise(r=>server.close(r))}

@@ -1,0 +1,19 @@
+# Private murder-mystery source packs and generated player artifacts.
+murderScripts/
+private-output/
+output/
+
+# Local credentials and deployment environment files.
+*.pem
+*.key
+.env
+.env.*
+!.env*.example
+
+# Python caches created by the local builders.
+__pycache__/
+*.py[cod]
+
+# Local tool installations and JavaScript dependencies.
+.tools/
+**/node_modules/

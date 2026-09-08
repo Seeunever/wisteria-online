@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+const root=new URL('./private/',import.meta.url);
+const html=fs.readFileSync(new URL('../output/应邪化仆-离线互动版.html',import.meta.url),'utf8');
+const data=JSON.parse(html.match(/<script[^>]*id=["']content-data["'][^>]*>([\s\S]*?)<\/script>/)[1]);
+const write=(filename,media)=>{if(!media.data.startsWith('data:image/jpeg;base64,'))throw Error('图片格式不符');fs.writeFileSync(new URL(filename,root),Buffer.from(media.data.split(',')[1],'base64'),{flag:'wx'});return filename};
+const roleIds=['r01-xiunong','r02-qiqiao','r03-qigong','r04-jiawu','r05-tong'];
+const roles=roleIds.map(id=>{const stage=data.roles.find(r=>r.id===id).stages[2];if(stage.id!==`${id}-act-three`||stage.items.length!==2)throw Error('第三幕映射不符');return {id,pages:stage.items.map((m,i)=>write(`${id}-act-3-${i}.jpg`,m))}});
+const locations=['副楼二层－小姐房','主楼一层','主楼二层','少爷房－外屋','少爷房－里屋','女佣房','副楼楼下','湖中亭','客房','书房','男仆房','车棚','门房','佟家－主卧','佟家－次卧','合资纱厂－工头','合资纱厂－车夫','二太太的随身物品','期巧的随身物品','期巩的随身物品','嘉芜的随身物品','佟公子的随身物品','石桥下','副楼二层－小姐房'];
+const forbiddenNumbers=[[3,18],[1,19,24],[5,20],[4,21],[9,22]];
+const group=data.clueGroups.find(g=>g.id==='investigation-act-three');if(group.cards.length!==24)throw Error('第三幕卡数不符');
+const cards=group.cards.map((c,i)=>{if(c.id!==`act-three-clue-${String(i+1).padStart(2,'0')}`)throw Error('卡号不符');return {id:c.id,act:3,location:locations[i],mandatory:[1,23].includes(i+1),forbidden:roleIds.filter((_,r)=>forbiddenNumbers[r].includes(i+1)),front:write(`${c.id}-front.jpg`,c.front),content:write(`${c.id}-content.jpg`,c.back)}});
+const memoryGroups=['memory-xiunong','memory-qiqiao','memory-qigong','memory-jiawu','memory-tong'];
+const memories=memoryGroups.flatMap((id,r)=>{const g=data.clueGroups.find(g=>g.id===id);if(g.cards.length!==3)throw Error('回忆数量不符');return g.cards.map((c,i)=>{if(c.id!==`${id}-${String(i+1).padStart(2,'0')}`)throw Error('回忆编号不符');return {id:c.id,role:roleIds[r],number:i+1,front:write(`${c.id}-front.jpg`,c.front),content:write(`${c.id}-content.jpg`,c.back)}})});
+fs.writeFileSync(new URL('act-three.json',root),JSON.stringify({roles,cards,memories},null,2),{flag:'wx'});
+console.log('已复用第三幕10张原页、24张普通线索双面、15张回忆双面；未导入结局或真相。');

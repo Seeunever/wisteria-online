@@ -1,0 +1,14 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>紫藤夫人 · 同行</title><!-- shared-style -->
+<style>.actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}.actions button{margin:0}.status{padding:18px;border:1px solid #46504d;border-radius:12px;margin:20px 0}.card-list details{border-top:1px solid #46504d}.card-list .page{max-width:620px}.role .page{margin:8px 0}.chosen{outline:2px solid #d8c393;outline-offset:3px}#gamePages{margin-top:28px}#gamePages details{border-top:1px solid #46504d}#locations{width:100%;max-width:420px}.dialog-body input[type=checkbox]{width:20px;height:20px;vertical-align:middle;margin-right:10px}.dialog-body label{line-height:1.8}@media(max-width:600px){.actions button{width:100%}.status{padding:14px}.dialog-body details>button{width:100%}}</style>
+<link rel="stylesheet" href="/terminal.css">
+<main class="player-shell"><nav class="terminal-bar" aria-label="站点导航"><a class="terminal-brand" href="/">同行 <small>FIELD<br>ARCHIVE</small></a><a href="/">← 选择其他剧本</a></nav><header><span class="eyebrow">CASE 02 / 六人同行 · 四日调查</span><h1>紫藤夫人</h1><small>本剧本的角色、线索和进度独立保存</small></header>
+<p id="connection" role="status"></p><p id="error" class="error" role="alert"></p>
+<aside id="testAssist" class="test-assist" hidden><small>TEST MODE / 测试中</small><button id="testAssistButton">测试中，帮我一键补完本轮其他人的选择和确认</button><p>会补齐空位，并代操作除你以外的所有角色（包括已登录账号）。拿第一张合法牌，新牌默认公开、已有隐藏保留；停在你操作处或本轮结束，不替你确认新幕和最终揭晓。正式与朋友游玩时不要使用。</p><p id="testAssistResult" role="status"></p></aside>
+<section id="login" class="panel"><h2>进入这个故事</h2><p>填写你常用的用户名。手机和电脑使用相同名字；知道名字就能登录，仅限熟人使用。</p><form id="loginForm"><label for="name">用户名</label><input id="name" required maxlength="32" autocomplete="username"><button>进入游戏</button></form></section>
+<section id="selection" hidden><h2>选择你的角色</h2><p id="identity"></p><p>与朋友商量好再选。选角后立即阅读，不等待其他人；本剧本内暂不支持换角。</p><div id="roles" class="roles"></div></section>
+<section id="game" hidden><h2 id="roleTitle"></h2><div class="actions"><button id="publicButton">公共说明与地图</button><button id="memoryButton" hidden>我的回忆</button><button id="endingButton" hidden>我的结局</button><button id="truthButton" hidden>公共真相</button></div>
+<p class="note" id="dayNote"></p><section id="flow" class="status" aria-label="当前行动"></section><section id="clues" class="card-list"></section>
+<h2>我的剧本</h2><p>原页保留，手机可双指放大，也可以打开原图查看。只读当前已开放幕次。</p><div id="gamePages"></div></section></main>
+<dialog id="materials" aria-labelledby="materialsTitle"><div class="dialog-header"><h2 id="materialsTitle"></h2><button id="materialsClose">返回游戏</button></div><div class="dialog-body" id="materialsBody"></div></dialog>
+<script src="/test-assist-ui.js"></script><script src="/ziteng/ui.js"></script></html>

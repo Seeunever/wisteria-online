@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>应邪化仆 · 同行</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#151c20;color:#eee9dd;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+*{box-sizing:border-box}
+body{margin:0;overflow-wrap:anywhere}
+body:has(dialog[open]){overflow:hidden}
+main{max-width:1120px;margin:auto;padding:32px max(20px,env(safe-area-inset-right)) max(32px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
+header{border-bottom:1px solid #46504d;padding-bottom:20px;margin-bottom:28px}
+.eyebrow{color:#c5af7e;font-size:13px;letter-spacing:3px}
+h1{font-family:serif;font-weight:500;font-size:36px;margin:12px 0}
+h2{font-size:22px;line-height:1.5}
+p{line-height:1.7;color:#b9c3bf}
+.panel{max-width:480px;margin:8vh auto;padding:26px;border:1px solid #46504d;border-radius:16px;background:#202a2c}
+label{display:block;margin:20px 0 10px}
+input,select{max-width:100%;min-width:0;font:inherit;font-size:16px;background:#151c20;color:inherit;padding:14px;border:1px solid #7e8b83;border-radius:8px}
+input{width:100%}
+button{font:inherit;line-height:1.5;cursor:pointer;background:#d8c393;color:#20251f;border:0;padding:12px 20px;border-radius:8px;min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #fff;outline-offset:3px}
+form button{margin-top:18px;width:100%}
+.roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:16px}
+.role{min-width:0;padding:22px;border:1px solid #46504d;border-radius:12px;background:#202a2c}
+.role button{width:100%}
+.note{padding:14px 18px;background:#29342f;border-left:3px solid #c5af7e;line-height:1.7}
+.page{display:block;width:100%;height:auto;border-radius:6px;margin:18px 0}
+.error{color:#ffc6ba;min-height:24px}
+a{color:#dac89f;display:inline-flex;align-items:center;min-height:44px;max-width:100%;padding:8px 0}
+small{color:#b9c3bf}
+#reader{max-width:100%}
+#readyList{padding-left:24px;line-height:1.9}
+summary{cursor:pointer;padding:12px 0;min-height:48px;line-height:1.6}
+#search .search-action{margin:6px 8px 6px 0}
+#search .role .search-action{margin:6px 0 0}
+#search select{display:block;margin:8px 0;background:#29342f}
+dialog{background:#202a2c;color:#eee9dd;border:1px solid #7e8b83;border-radius:14px;width:min(820px,94vw);max-width:94vw;max-height:90vh;max-height:90dvh;padding:0;overflow:hidden}
+dialog[open]{display:flex;flex-direction:column}
+dialog::backdrop{background:#000b}
+.dialog-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0;padding:16px 24px;border-bottom:1px solid #46504d}
+.dialog-header h2{margin:0;min-width:0}
+.dialog-header button{flex-shrink:0;padding:10px 16px}
+.dialog-body{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:8px 24px 24px;scroll-padding-block:12px}
+#memoryCards details{margin:18px 0;border-top:1px solid #46504d;padding-top:16px}
+#memoryCards input[type=checkbox]{width:20px;height:20px;padding:0;vertical-align:middle;margin:0 10px 0 0}
+#memoryCards label{line-height:1.8;min-height:44px;cursor:pointer}
+.memory-trigger{display:inline-block;margin-left:16px;color:#dac89f;max-width:100%}
+#endingEntry button{margin:6px 8px 6px 0}
+#endingPages details{border-top:1px solid #46504d;margin-top:16px}
+@media(min-width:601px) and (max-width:1100px){
+ .roles{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .role{padding:20px}
+}
+@media(max-width:600px){
+ main{padding:22px max(14px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}
+ header{padding-bottom:16px;margin-bottom:20px}
+ h1{font-size:30px}h2{font-size:20px}
+ .panel{padding:20px;margin:20px auto}
+ .roles{grid-template-columns:minmax(0,1fr);gap:12px}
+ .role{padding:16px}.note{padding:12px 14px}
+ #readyButton,#memoryButton,#endingEntry button,#search .search-action,#search select,#memoryCards details>button{width:100%}
+ #search .search-action,#endingEntry button{margin:6px 0}
+ dialog{width:calc(100% - 16px);max-width:calc(100% - 16px);max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);border-radius:12px}
+ .dialog-header{padding:12px max(14px,env(safe-area-inset-right)) 12px max(14px,env(safe-area-inset-left));gap:8px}
+ .dialog-body{padding:8px max(14px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}
+ .memory-trigger{display:block;margin:8px 0 0 20px;max-width:calc(100% - 20px)}
+}
+@media(max-height:500px){
+ dialog{max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px)}
+ .dialog-header{padding-top:8px;padding-bottom:8px}
+ .panel{margin:16px auto}
+}
+</style>
+<link rel="stylesheet" href="/terminal.css">
+<main class="player-shell"><nav class="terminal-bar" aria-label="站点导航"><a class="terminal-brand" href="/">同行 <small>FIELD<br>ARCHIVE</small></a><a href="/">← 选择其他剧本</a></nav><header><span class="eyebrow">CASE 01 / 五人同行 · 在线版</span><h1>应邪化仆</h1><small>三幕搜证 / 私密回忆 / 结束与复盘</small></header>
+<div id="error" class="error" role="alert"></div>
+<aside id="testAssist" class="test-assist" hidden><small>TEST MODE / 测试中</small><button id="testAssistButton">测试中，帮我一键补完本轮其他人的选择和确认</button><p>会补齐空位，并代操作除你以外的所有角色（包括已登录账号）。拿第一张合法牌，新牌默认公开、已有隐藏保留；停在你操作处或本轮结束，不替你确认新幕和最终揭晓。正式与朋友游玩时不要使用。</p><p id="testAssistResult" role="status"></p></aside>
+<script src="/test-assist-ui.js"></script>
+<section id="login" class="panel"><h2>先告诉大家你是谁</h2><p>无需密码。同一个用户名可以在手机和电脑登录。这里仅供熟悉的朋友使用，知道用户名就能进入该账号。</p><form><label for="name">用户名</label><input id="name" required maxlength="32" autocomplete="username" placeholder="手机与电脑请填写相同名字"><button>进入游戏</button></form></section>
+<section id="selection" hidden><h2>选择你的角色</h2><p id="identity"></p><p>和朋友在电话里商量好再选，选定后直接阅读，暂不支持换角。</p><div class="roles" id="roles"></div></section>
+<section id="reader" hidden><h2 id="roleTitle"></h2><div class="note">第一幕 · 第 01–02 页。阅读后可集体交流，不可私聊。</div><section aria-label="全员进度"><h2 id="phaseTitle"></h2><p id="readyCount" aria-live="polite"></p><ul id="readyList"></ul><p id="phaseHint"></p><button id="readyButton">我已读完并交流好，准备搜证</button></section><p>手机上可使用双指放大；也可打开原图查看细节。</p><div id="pages"></div><p id="bottomHint">阅读和交流完成后，请回到上方确认准备搜证。</p></section>
+</main>
+<dialog id="memoryDialog" aria-labelledby="memoryTitle"><div class="dialog-header"><h2 id="memoryTitle">我的回忆</h2><button id="memoryClose">返回游戏</button></div><div class="dialog-body"><p>回忆只能自己阅读，不能公开原卡；你可以向朋友转述或编造。不需要轮到你，也不影响普通线索。</p><p id="memoryError" class="error" role="alert"></p><div id="memoryCards"></div></div></dialog>
+<script src="/search-ui.js"></script>
+<dialog id="endingDialog" aria-labelledby="endingTitle"><div class="dialog-header"><h2 id="endingTitle"></h2><button id="endingClose">返回游戏</button></div><div class="dialog-body"><p id="endingNote"></p><div id="endingPages"></div></div></dialog>
+<script src="/ending-ui.js"></script>
+<script>
+const memoryEntry=document.createElement('section');memoryEntry.innerHTML='<button id="memoryButton" disabled>我的回忆</button><p id="memoryHint"></p>';document.getElementById('roleTitle').after(memoryEntry);
+</script>
+<script src="/memory-ui.js"></script>
+<script>
+const $=id=>document.getElementById(id);let signature='';let refreshing=false;
+async function api(url,body){const response=await fetch(url,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});const data=await response.json();if(data.accessRequired)location.reload();if(!response.ok){const error=new Error(data.error);error.status=response.status;throw error}return data}
+async function refresh(){if(refreshing)return;refreshing=true;try{const state=await api('/api/state');$('login').hidden=true;const next=JSON.stringify(state);if(next!==signature){signature=next;render(state)}$('error').textContent=''}catch(error){if(error.status===401){$('login').hidden=false;$('selection').hidden=true;$('reader').hidden=true;signature=''}else $('error').textContent='连接暂时中断，正在重试；已显示的剧本仍可阅读。'}finally{refreshing=false}}
+function render(state){configureTestAssist(state,async()=>{signature='';await refresh()},'/api/test-assist');$('selection').hidden=!!state.role;$('reader').hidden=!state.role;$('identity').textContent=`当前账号：${state.name} · 其他设备使用同名登录即可同步`;
+if(!state.role){$('roles').replaceChildren(...state.roles.map(role=>{const card=document.createElement('article');card.className='role';const heading=document.createElement('h2');heading.textContent=`${role.number} · ${role.name}`;const status=document.createElement('p');status.textContent=role.owner?`已由 ${role.owner} 选择`:'等待选择';const button=document.createElement('button');button.textContent=role.owner?'已被选择':'选择并阅读';button.disabled=!!role.owner;button.onclick=async()=>{button.disabled=true;try{await api('/api/claim',{role:role.id});signature='';await refresh()}catch(error){$('error').textContent=error.message;button.disabled=false}};card.append(heading,status,button);return card}));return}
+const role=state.roles.find(role=>role.id===state.role);$('roleTitle').textContent=`${role.name} · 第一幕`;
+configureMemories(state);
+configureEnding(state);
+renderSearch(state);
+const ready=state.progress.ready;const allReady=state.progress.phase==='act-1-search-preparation';
+$('phaseTitle').textContent=allReady?'第一幕 · 搜证准备':'等待全员准备好';
+$('readyCount').textContent=`已确认 ${ready.length} / ${state.roles.length} 人`;
+$('readyList').replaceChildren(...state.roles.map(person=>{const li=document.createElement('li');li.textContent=`${person.number} · ${person.name}：${!person.owner?'尚未选角':ready.includes(person.id)?'已准备好':'阅读与交流中'}`;li.style.lineHeight='1.9';return li}));
+$('phaseHint').textContent=allReady?'全员已确认。接下来按角色编号 1→5 搜证，第一幕共两轮。拿牌功能尚未接入，本次试玩停在这里；仍可继续阅读自己的剧本。':'确认后仍可阅读自己的剧本。五个角色都准备好才会进入搜证，同一账号的多个设备只算一人。';
+$('readyButton').disabled=ready.includes(role.id);$('readyButton').hidden=allReady;$('readyButton').textContent=ready.includes(role.id)?'已确认，等待其他玩家':'我已读完并交流好，准备搜证';
+$('bottomHint').hidden=allReady;
+if(state.search){
+ const s=state.search;const second=s.act===2;const actName=['','第一','第二','第三'][s.act];
+ $('roleTitle').textContent=`${role.name} · ${actName}幕`;
+ document.querySelector('#reader .note').textContent=s.act===3?'第三幕 · 第05–08页。可以私聊；回忆条件见自己的07页。':second?`第二幕 · 第03–04页。${s.phase==='act-2-discussion'?'调查已结束，现在可私聊。':'调查前不可私聊，调查结束后可私聊。'}`:'第一幕 · 第01–02页。不可私聊。';
+ $('phaseTitle').textContent=`${actName}幕 · ${s.phase.endsWith('reading')?'阅读与交流':'搜证与交流'}`;
+ $('phaseHint').textContent='公开选择先私下暂存，轮末统一发布；不显示领取者。已公开的卡不能重新隐藏。';
+ if(s.phase==='act-3-ended'){$('roleTitle').textContent=`${role.name} · 游戏已结束`;$('phaseTitle').textContent='结束与复盘';$('phaseHint').textContent='结局与公共真相已开放；其他人的私人材料不会自动公开。';}
+ const gate=['act-1-discussion','act-2-reading','act-2-discussion','act-3-reading','act-3-discussion'].includes(s.phase);
+ $('readyCount').textContent=gate?`本次确认 ${s.ready.length} / 5 人`:'按下方行动提示进行';
+ $('readyList').replaceChildren(...state.roles.map(person=>{const li=document.createElement('li');li.textContent=`${person.number} · ${person.name}：${gate?(s.ready.includes(person.id)?'已确认':'等待确认'):'已入场'}`;return li}));
+}
+// Do not replace already-loaded pages on periodic synchronization.
+const pageKey=JSON.stringify(state.pages);if($('pages').dataset.role===pageKey)return;$('pages').dataset.role=pageKey;$('pages').replaceChildren(...state.pages.map((url,index)=>{const box=document.createElement('details');box.open=state.pages.length===4?index>=2:index===state.pages.length-1;const heading=document.createElement('summary');heading.textContent=['第一幕 · 第 01–02页','第二幕 · 第 03–04页','第三幕 · 第 05–06页','第三幕 · 第 07–08页'][index];const link=document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener';link.textContent='打开原图';const img=document.createElement('img');img.className='page';img.src=url;img.alt=`自己的${heading.textContent}原页`;box.append(heading,link,img);return box}))}
+document.querySelector('form').onsubmit=async event=>{event.preventDefault();const button=event.target.querySelector('button');button.disabled=true;try{await api('/api/login',{name:$('name').value});await refresh()}catch(error){$('error').textContent=error.message}finally{button.disabled=false}};
+$('readyButton').onclick=async()=>{const button=$('readyButton');button.disabled=true;try{await api('/api/ready',{phase:'act-1-reading'});signature='';await refresh()}catch(error){$('error').textContent=error.message;button.disabled=false}};
+refresh();setInterval(refresh,1500);
+</script></html>
